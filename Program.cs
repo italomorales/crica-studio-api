@@ -21,5 +21,10 @@ var app = builder.Build();
 
 app.UseCors("Frontend");
 app.MapHealthChecks("/health");
+app.MapGet("/api/ping", () => Results.Ok(new
+{
+    message = "API online",
+    timestamp = DateTimeOffset.UtcNow,
+}));
 
 app.Run();
