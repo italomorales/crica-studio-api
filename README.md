@@ -61,3 +61,18 @@ docker compose up --build --detach
 ```
 
 O container se chama `crica-studio-api` e usa a política `unless-stopped`, iniciando automaticamente após uma reinicialização do servidor, exceto se tiver sido parado manualmente.
+
+## Deploy automático
+
+O workflow `.github/workflows/deploy.yml` executa a cada push para a branch `main`. Ele conecta ao Lightsail por SSH, atualiza o checkout e recompila o container.
+
+Antes de habilitá-lo, configure estes secrets no repositório GitHub:
+
+| Secret | Conteúdo |
+| --- | --- |
+| `SSH_HOST` | IP estático do Lightsail |
+| `SSH_USER` | Usuário SSH da instância (`ubuntu`) |
+| `SSH_PRIVATE_KEY` | Chave privada exclusiva do GitHub Actions |
+| `SSH_KNOWN_HOSTS` | Chave pública do host SSH, no formato `known_hosts` |
+
+A chave pública correspondente à `SSH_PRIVATE_KEY` deve ser adicionada a `~/.ssh/authorized_keys` do usuário `ubuntu` no Lightsail.
