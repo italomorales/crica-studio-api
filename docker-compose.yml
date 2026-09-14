@@ -7,6 +7,7 @@ services:
     container_name: crica-studio-api
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Database: ${DATABASE_CONNECTION_STRING:-}
     restart: unless-stopped
 
   nginx:

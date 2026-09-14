@@ -25,9 +25,13 @@ jobs:
 
       - name: Update and start API
         shell: bash
+        env:
+          DATABASE_CONNECTION_STRING: ${{ secrets.DATABASE_CONNECTION_STRING }}
         run: |
-          ssh "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" << 'EOF'
+          database_connection_string_base64="$(printf '%s' "$DATABASE_CONNECTION_STRING" | base64 --wrap=0)"
+          ssh "${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}" "DATABASE_CONNECTION_STRING_BASE64=$database_connection_string_base64 bash -s" << 'EOF'
             set -euo pipefail
+            export DATABASE_CONNECTION_STRING="$(printf '%s' "$DATABASE_CONNECTION_STRING_BASE64" | base64 --decode)"
             cd ~/crica-studio-api
             git pull --ff-only origin main
             docker compose up --build --detach

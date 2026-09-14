@@ -4,7 +4,5 @@ obj/
 .idea/
 *.user
 *.suo
-.env
-.env.*
-!.env.example
+appsettings.Local.json
 certbot/

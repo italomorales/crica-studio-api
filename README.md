@@ -14,7 +14,7 @@ dotnet run
 
 A API estará disponível em `http://localhost:5030`.
 
-## Health check
+## Health checks
 
 ```powershell
 curl.exe -i http://localhost:5030/health
@@ -22,7 +22,23 @@ curl.exe -i http://localhost:5030/health
 
 Resposta esperada: HTTP `200 OK`, com o texto `Healthy`.
 
-O endpoint verifica se a aplicação está respondendo. Ainda não há verificações de banco de dados ou serviços externos.
+O endpoint verifica se a aplicação está respondendo.
+
+Para executar localmente com `dotnet run`, copie o arquivo de exemplo e preencha a string do RDS PostgreSQL:
+
+```bash
+cp appsettings.Local.example.json appsettings.Local.json
+```
+
+O `appsettings.Local.json` é carregado apenas em Development e já está no `.gitignore`.
+
+Em seguida, consulte:
+
+```powershell
+curl.exe -i http://localhost:5030/health/database
+```
+
+O endpoint abre uma conexão autenticada e executa `SELECT CURRENT_DATE`. Ele retorna HTTP `200` com a data retornada pelo PostgreSQL, ou HTTP `503` se a connection string não estiver configurada ou a consulta falhar.
 
 ## Executar com Docker
 
@@ -65,6 +81,8 @@ O container se chama `crica-studio-api` e usa a política `unless-stopped`, inic
 ## Deploy automático
 
 O workflow `.github/workflows/deploy.yml` executa a cada push para a branch `main`. Ele conecta ao Lightsail por SSH, atualiza o checkout e recompila o container.
+
+Crie o repository secret `DATABASE_CONNECTION_STRING` com a connection string completa. O workflow a encaminha de forma temporária para o `docker compose`, sem criar arquivo com a senha no Lightsail.
 
 Antes de habilitá-lo, configure estes secrets no repositório GitHub:
 
