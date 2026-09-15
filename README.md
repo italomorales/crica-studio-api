@@ -1,12 +1,12 @@
 # Crica Studio API
 
-API mínima em ASP.NET Core (.NET 10).
+API em ASP.NET Core (.NET 10), organizada em Api, Application, Domain e Infrastructure.
 
 ## Executar localmente
 
 Pré-requisito: SDK .NET 10.
 
-Na pasta `backend`, execute:
+Na pasta `backend/CricaStudio.Api`, execute:
 
 ```powershell
 dotnet run
@@ -32,6 +32,9 @@ cp appsettings.Local.example.json appsettings.Local.json
 
 O `appsettings.Local.json` é carregado apenas em Development e já está no `.gitignore`.
 
+O arquivo local também precisa de `Jwt:Key` com ao menos 32 caracteres. Produção recebe a
+chave por `JWT_KEY`; ela não deve ser adicionada ao repositório.
+
 Em seguida, consulte:
 
 ```powershell
@@ -39,6 +42,19 @@ curl.exe -i http://localhost:5030/health/database
 ```
 
 O endpoint abre uma conexão autenticada e executa `SELECT CURRENT_DATE`. Ele retorna HTTP `200` com a data retornada pelo PostgreSQL, ou HTTP `503` se a connection string não estiver configurada ou a consulta falhar.
+
+## Login administrativo
+
+Execute manualmente o script [sql/001_create_admin_users.sql](sql/001_create_admin_users.sql) em cada banco. Ele cria o schema PostgreSQL `cricastudio` e a tabela `cricastudio.admin_users`.
+Para criar um usuário, o script abaixo imprime o `INSERT` com PBKDF2-SHA512, salt aleatório e
+210 mil iterações; execute o SQL resultante no banco desejado:
+
+```powershell
+.\scripts\new-admin-user.ps1 -Email "admin@exemplo.com" -Name "Admin" -Password "uma senha forte"
+```
+
+O endpoint `POST /api/admin/auth/login` recebe `email` e `password`, e retorna um JWT de oito
+horas. `GET /api/admin/auth/me` exige o header `Authorization: Bearer <token>`.
 
 ## Executar com Docker
 
@@ -92,5 +108,6 @@ Antes de habilitá-lo, configure estes secrets no repositório GitHub:
 | `SSH_USER` | Usuário SSH da instância (`ubuntu`) |
 | `SSH_PRIVATE_KEY` | Chave privada exclusiva do GitHub Actions |
 | `SSH_KNOWN_HOSTS` | Chave pública do host SSH, no formato `known_hosts` |
+| `JWT_KEY` | Chave aleatória com pelo menos 32 caracteres para assinatura dos tokens |
 
 A chave pública correspondente à `SSH_PRIVATE_KEY` deve ser adicionada a `~/.ssh/authorized_keys` do usuário `ubuntu` no Lightsail.

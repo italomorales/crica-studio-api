@@ -8,6 +8,10 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__Database: ${DATABASE_CONNECTION_STRING:-}
+      Jwt__Key: ${JWT_KEY:-}
+      Jwt__Issuer: ${JWT_ISSUER:-crica-studio-api}
+      Jwt__Audience: ${JWT_AUDIENCE:-crica-studio-admin}
+      Jwt__ExpiresMinutes: ${JWT_EXPIRES_MINUTES:-480}
     restart: unless-stopped
 
   nginx:
