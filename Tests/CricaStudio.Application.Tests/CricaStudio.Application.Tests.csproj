@@ -13,6 +13,7 @@
     </PackageReference>
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\CricaStudio.Api\CricaStudio.Api.csproj" />
     <ProjectReference Include="..\..\CricaStudio.Application\CricaStudio.Application.csproj" />
     <ProjectReference Include="..\..\CricaStudio.Domain\CricaStudio.Domain.csproj" />
     <ProjectReference Include="..\..\CricaStudio.Infrastructure\CricaStudio.Infrastructure.csproj" />

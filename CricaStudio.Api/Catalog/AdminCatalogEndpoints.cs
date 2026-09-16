@@ -1,5 +1,6 @@
 using CricaStudio.Application.Catalog;
 using CricaStudio.Domain.Catalog;
+using Amazon.S3;
 using Microsoft.AspNetCore.Authorization;
 
 namespace CricaStudio.Api.Catalog;
@@ -82,6 +83,10 @@ public static class AdminCatalogEndpoints
             {
                 return Results.Problem(title: "Armazenamento de mídia não configurado", detail: exception.Message, statusCode: StatusCodes.Status503ServiceUnavailable);
             }
+            catch (AmazonS3Exception)
+            {
+                return Results.Problem(title: "Não foi possível armazenar a mídia", statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
         }).DisableAntiforgery();
 
         group.MapPost("/types", async (TypeRequest request, ICatalogWriteRepository repo, CancellationToken ct) =>
@@ -106,8 +111,36 @@ public static class AdminCatalogEndpoints
         group.MapPut("/settings", async (SettingsRequest request, ICatalogWriteRepository repo, CancellationToken ct) => { if (!string.IsNullOrEmpty(request.WhatsappNumber) && !System.Text.RegularExpressions.Regex.IsMatch(request.WhatsappNumber,"^[1-9]\\d{7,14}$")) return Results.ValidationProblem(new Dictionary<string,string[]> { ["whatsappNumber"]=["Informe somente dígitos do número internacional."] }); await repo.SaveSettingsAsync(new CatalogSettings(request.WhatsappNumber),ct); return Results.NoContent(); });
     }
 
-    private static async Task<IResult> SaveProduct(ProductRequest r, Guid id, ICatalogWriteRepository repo, CancellationToken ct) { if (r.TypeId==Guid.Empty || string.IsNullOrWhiteSpace(r.Name) || string.IsNullOrWhiteSpace(r.Description) || r.Order < 0 || !new[]{"draft","published","inactive"}.Contains(r.Status) || !new[]{"consult","fixed","from"}.Contains(r.PriceMode) || (r.PriceMode!="consult" && (!r.Price.HasValue || r.Price<=0))) return Results.ValidationProblem(new Dictionary<string,string[]> { ["product"]=["Confira os campos obrigatórios do produto."] }); var p=await repo.SaveShopProductAsync(new ShopProduct(id,r.TypeId,r.Name.Trim(),r.Description.Trim(),r.FullDescription?.Trim(),r.PriceMode,r.Price,r.Demo,r.Characteristics??[],r.Personalization??[],(r.Images??[]).Select((url,index)=>new ProductImage(Guid.NewGuid(),url,index)).ToArray(),r.Status,r.Order),ct); return Results.Ok(new { id=p.Id }); }
-    private static async Task<IResult> SaveAffiliate(AffiliateRequest r, Guid id, ICatalogWriteRepository repo, CancellationToken ct) { if (r.TypeId==Guid.Empty || string.IsNullOrWhiteSpace(r.Name) || string.IsNullOrWhiteSpace(r.Description) || r.Order<0 || !new[]{"draft","published","inactive"}.Contains(r.Status) || !new[]{"Shopee","Mercado Livre","TikTok Shop","AliExpress","Outra"}.Contains(r.Platform)) return Results.ValidationProblem(new Dictionary<string,string[]> { ["affiliate"]=["Confira os campos obrigatórios da indicação."] }); var p=await repo.SaveAffiliateProductAsync(new AffiliateProduct(id,r.TypeId,r.Name.Trim(),r.Description.Trim(),r.Platform,r.Image?.Trim(),r.Url?.Trim(),r.Seller?.Trim(),r.DemoListing,r.Status,r.Order),ct); return Results.Ok(new { id=p.Id }); }
+    private static async Task<IResult> SaveProduct(ProductRequest r, Guid id, ICatalogWriteRepository repo, CancellationToken ct)
+    {
+        var images = r.Images ?? [];
+        if (r.TypeId == Guid.Empty || string.IsNullOrWhiteSpace(r.Name) || string.IsNullOrWhiteSpace(r.Description) || r.Order < 0 ||
+            !new[] { "draft", "published", "inactive" }.Contains(r.Status) || !new[] { "consult", "fixed", "from" }.Contains(r.PriceMode) ||
+            (r.PriceMode != "consult" && (!r.Price.HasValue || r.Price <= 0)) || images.Length > 5 || images.Any(url => !IsAllowedImageUrl(url)) ||
+            (r.Status == "published" && images.Length == 0))
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["product"] = ["Confira os campos obrigatórios, a foto principal e os endereços das imagens."] });
+
+        var product = await repo.SaveShopProductAsync(new ShopProduct(id, r.TypeId, r.Name.Trim(), r.Description.Trim(), r.FullDescription?.Trim(), r.PriceMode, r.Price, r.Demo, r.Characteristics ?? [], r.Personalization ?? [], images.Select((url, index) => new ProductImage(Guid.NewGuid(), url, index)).ToArray(), r.Status, r.Order), ct);
+        return Results.Ok(new { id = product.Id });
+    }
+
+    private static async Task<IResult> SaveAffiliate(AffiliateRequest r, Guid id, ICatalogWriteRepository repo, CancellationToken ct)
+    {
+        if (r.TypeId == Guid.Empty || string.IsNullOrWhiteSpace(r.Name) || string.IsNullOrWhiteSpace(r.Description) || r.Order < 0 ||
+            !new[] { "draft", "published", "inactive" }.Contains(r.Status) || !new[] { "Shopee", "Mercado Livre", "TikTok Shop", "AliExpress", "Outra" }.Contains(r.Platform) ||
+            (r.Image is not null && !IsAllowedImageUrl(r.Image)) || (r.Url is not null && !IsHttpsUrl(r.Url)) ||
+            (r.Status == "published" && !r.DemoListing && (string.IsNullOrWhiteSpace(r.Image) || string.IsNullOrWhiteSpace(r.Url))))
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["affiliate"] = ["Confira os campos obrigatórios, a foto principal e o link HTTPS da indicação."] });
+
+        var affiliate = await repo.SaveAffiliateProductAsync(new AffiliateProduct(id, r.TypeId, r.Name.Trim(), r.Description.Trim(), r.Platform, r.Image?.Trim(), r.Url?.Trim(), r.Seller?.Trim(), r.DemoListing, r.Status, r.Order), ct);
+        return Results.Ok(new { id = affiliate.Id });
+    }
+
+    internal static bool IsAllowedImageUrl(string value) =>
+        value.StartsWith("/assets/", StringComparison.Ordinal) || IsHttpsUrl(value);
+
+    internal static bool IsHttpsUrl(string value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps && string.IsNullOrEmpty(uri.UserInfo);
 }
 
 public sealed record TypeRequest(Guid Id, string Name, string Scope, bool Active);
