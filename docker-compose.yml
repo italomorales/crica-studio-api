@@ -12,6 +12,11 @@ services:
       Jwt__Issuer: ${JWT_ISSUER:-crica-studio-api}
       Jwt__Audience: ${JWT_AUDIENCE:-crica-studio-admin}
       Jwt__ExpiresMinutes: ${JWT_EXPIRES_MINUTES:-480}
+      CatalogMedia__Bucket: ${CATALOG_MEDIA_BUCKET:-}
+      CatalogMedia__Region: ${CATALOG_MEDIA_REGION:-sa-east-1}
+      CatalogMedia__PublicBaseUrl: ${CATALOG_MEDIA_PUBLIC_BASE_URL:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
     restart: unless-stopped
 
   nginx:
