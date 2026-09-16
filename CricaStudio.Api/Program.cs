@@ -1,7 +1,10 @@
 using System.Text;
 using CricaStudio.Api.Auth;
+using CricaStudio.Api.Catalog;
 using CricaStudio.Application.Auth;
+using CricaStudio.Application.Catalog;
 using CricaStudio.Domain.AdminUsers;
+using CricaStudio.Domain.Catalog;
 using CricaStudio.Infrastructure.Persistence;
 using CricaStudio.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -20,6 +23,7 @@ var jwtSettings = builder.Configuration.GetSection(JwtSettings.SectionName).Get<
 jwtSettings.Validate();
 
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+var catalogMediaOptions = builder.Configuration.GetSection(CatalogMediaOptions.SectionName).Get<CatalogMediaOptions>() ?? new();
 
 builder.Services.AddCors(options => options.AddPolicy("Frontend", policy => policy
     .WithOrigins(allowedOrigins)
@@ -47,9 +51,18 @@ builder.Services.AddAuthorization();
 builder.Services.AddScoped<IAdminUserRepository>(_ => string.IsNullOrWhiteSpace(databaseConnectionString)
     ? throw new InvalidOperationException("Defina ConnectionStrings__Database no ambiente da API.")
     : new PostgresAdminUserRepository(databaseConnectionString));
+builder.Services.AddScoped<ICatalogReadRepository>(_ => string.IsNullOrWhiteSpace(databaseConnectionString)
+    ? throw new InvalidOperationException("Defina ConnectionStrings__Database no ambiente da API.")
+    : new PostgresCatalogReadRepository(databaseConnectionString));
+builder.Services.AddScoped<ICatalogWriteRepository>(_ => string.IsNullOrWhiteSpace(databaseConnectionString)
+    ? throw new InvalidOperationException("Defina ConnectionStrings__Database no ambiente da API.")
+    : new PostgresCatalogWriteRepository(databaseConnectionString));
+builder.Services.AddSingleton(catalogMediaOptions);
+builder.Services.AddScoped<ICatalogMediaStorage, S3CatalogMediaStorage>();
 builder.Services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
 builder.Services.AddSingleton<IAccessTokenService>(new JwtTokenService(jwtSettings));
 builder.Services.AddScoped<LoginUseCase>();
+builder.Services.AddScoped<CatalogReadService>();
 builder.Services.AddHealthChecks();
 
 var app = builder.Build();
@@ -80,6 +93,8 @@ app.MapGet("/health/database", async (CancellationToken cancellationToken) =>
 });
 app.MapGet("/api/ping", () => Results.Ok(new { message = "API online", timestamp = DateTimeOffset.UtcNow }));
 app.MapAuthEndpoints();
+app.MapCatalogEndpoints();
+app.MapAdminCatalogEndpoints();
 
 app.Run();
 

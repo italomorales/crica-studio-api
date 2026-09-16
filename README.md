@@ -96,18 +96,18 @@ O container se chama `crica-studio-api` e usa a política `unless-stopped`, inic
 
 ## Deploy automático
 
-O workflow `.github/workflows/deploy.yml` executa a cada push para a branch `main`. Ele conecta ao Lightsail por SSH, atualiza o checkout e recompila o container.
+O workflow `backend/.github/workflows/deploy.yml` executa a cada push para a branch `main` e
+encaminha as credenciais ao Lightsail apenas durante a execução do `docker compose`; nenhum
+arquivo de segredo é criado no servidor.
 
-Crie o repository secret `DATABASE_CONNECTION_STRING` com a connection string completa. O workflow a encaminha de forma temporária para o `docker compose`, sem criar arquivo com a senha no Lightsail.
+Configure estes secrets e variables no repositório GitHub da API:
 
-Antes de habilitá-lo, configure estes secrets no repositório GitHub:
-
-| Secret | Conteúdo |
+| Tipo | Nome | Conteúdo |
 | --- | --- |
-| `SSH_HOST` | IP estático do Lightsail |
-| `SSH_USER` | Usuário SSH da instância (`ubuntu`) |
-| `SSH_PRIVATE_KEY` | Chave privada exclusiva do GitHub Actions |
-| `SSH_KNOWN_HOSTS` | Chave pública do host SSH, no formato `known_hosts` |
-| `JWT_KEY` | Chave aleatória com pelo menos 32 caracteres para assinatura dos tokens |
-
-A chave pública correspondente à `SSH_PRIVATE_KEY` deve ser adicionada a `~/.ssh/authorized_keys` do usuário `ubuntu` no Lightsail.
+| Secret | `DATABASE_CONNECTION_STRING` | String de conexão completa do PostgreSQL |
+| Secret | `JWT_KEY` | Chave aleatória com pelo menos 32 caracteres para assinatura dos tokens |
+| Secret | `AWS_ACCESS_KEY_ID` | Access key ID do usuário IAM `crica-studio-api-media` |
+| Secret | `AWS_SECRET_ACCESS_KEY` | Secret access key correspondente; nunca deve ir ao repositório |
+| Variable | `CATALOG_MEDIA_BUCKET` | `cricastudio.com` |
+| Variable | `CATALOG_MEDIA_REGION` | `sa-east-1` |
+| Variable | `CATALOG_MEDIA_PUBLIC_BASE_URL` | `https://cricastudio.com` |
