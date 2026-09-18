@@ -15,6 +15,7 @@ public sealed record ShopProduct(
     string PriceMode,
     decimal? Price,
     bool IsDemo,
+    bool IsFeatured,
     IReadOnlyList<string> Characteristics,
     IReadOnlyList<string> Personalization,
     IReadOnlyList<ProductImage> Images,
@@ -31,6 +32,7 @@ public sealed record AffiliateProduct(
     string? AffiliateUrl,
     string? Seller,
     bool IsDemoListing,
+    bool IsFeatured,
     string Status,
     int SortOrder);
 

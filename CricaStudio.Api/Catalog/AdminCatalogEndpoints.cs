@@ -36,6 +36,7 @@ public static class AdminCatalogEndpoints
                 priceMode = product.PriceMode,
                 price = product.Price,
                 demo = product.IsDemo,
+                featured = product.IsFeatured,
                 characteristics = product.Characteristics,
                 personalization = product.Personalization,
                 images = product.Images.Select(image => image.Url),
@@ -58,6 +59,7 @@ public static class AdminCatalogEndpoints
                 url = product.AffiliateUrl,
                 seller = product.Seller,
                 demoListing = product.IsDemoListing,
+                featured = product.IsFeatured,
                 status = product.Status,
                 order = product.SortOrder,
             }));
@@ -120,7 +122,12 @@ public static class AdminCatalogEndpoints
             (r.Status == "published" && images.Length == 0))
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["product"] = ["Confira os campos obrigatórios, a foto principal e os endereços das imagens."] });
 
-        var product = await repo.SaveShopProductAsync(new ShopProduct(id, r.TypeId, r.Name.Trim(), r.Description.Trim(), r.FullDescription?.Trim(), r.PriceMode, r.Price, r.Demo, r.Characteristics ?? [], r.Personalization ?? [], images.Select((url, index) => new ProductImage(Guid.NewGuid(), url, index)).ToArray(), r.Status, r.Order), ct);
+        if (r.Featured && r.Status != "published")
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["product"] = ["Um produto em destaque precisa estar publicado."] });
+        if (r.Featured && await repo.CountPublishedFeaturedShopProductsAsync(id, ct) >= 3)
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["product"] = ["Escolha no máximo três produtos em destaque."] });
+
+        var product = await repo.SaveShopProductAsync(new ShopProduct(id, r.TypeId, r.Name.Trim(), r.Description.Trim(), r.FullDescription?.Trim(), r.PriceMode, r.Price, r.Demo, r.Featured, r.Characteristics ?? [], r.Personalization ?? [], images.Select((url, index) => new ProductImage(Guid.NewGuid(), url, index)).ToArray(), r.Status, r.Order), ct);
         return Results.Ok(new { id = product.Id });
     }
 
@@ -132,7 +139,12 @@ public static class AdminCatalogEndpoints
             (r.Status == "published" && !r.DemoListing && (string.IsNullOrWhiteSpace(r.Image) || string.IsNullOrWhiteSpace(r.Url))))
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["affiliate"] = ["Confira os campos obrigatórios, a foto principal e o link HTTPS da indicação."] });
 
-        var affiliate = await repo.SaveAffiliateProductAsync(new AffiliateProduct(id, r.TypeId, r.Name.Trim(), r.Description.Trim(), r.Platform, r.Image?.Trim(), r.Url?.Trim(), r.Seller?.Trim(), r.DemoListing, r.Status, r.Order), ct);
+        if (r.Featured && r.Status != "published")
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["affiliate"] = ["Uma indicação em destaque precisa estar publicada."] });
+        if (r.Featured && await repo.CountPublishedFeaturedAffiliateProductsAsync(id, ct) >= 3)
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["affiliate"] = ["Escolha no máximo três fornecedores em destaque."] });
+
+        var affiliate = await repo.SaveAffiliateProductAsync(new AffiliateProduct(id, r.TypeId, r.Name.Trim(), r.Description.Trim(), r.Platform, r.Image?.Trim(), r.Url?.Trim(), r.Seller?.Trim(), r.DemoListing, r.Featured, r.Status, r.Order), ct);
         return Results.Ok(new { id = affiliate.Id });
     }
 
@@ -144,6 +156,6 @@ public static class AdminCatalogEndpoints
 }
 
 public sealed record TypeRequest(Guid Id, string Name, string Scope, bool Active);
-public sealed record ProductRequest(Guid TypeId,string Name,string Description,string? FullDescription,string PriceMode,decimal? Price,bool Demo,string[]? Characteristics,string[]? Personalization,string[]? Images,string Status,int Order);
-public sealed record AffiliateRequest(Guid TypeId,string Name,string Description,string Platform,string? Image,string? Url,string? Seller,bool DemoListing,string Status,int Order);
+public sealed record ProductRequest(Guid TypeId,string Name,string Description,string? FullDescription,string PriceMode,decimal? Price,bool Demo,bool Featured,string[]? Characteristics,string[]? Personalization,string[]? Images,string Status,int Order);
+public sealed record AffiliateRequest(Guid TypeId,string Name,string Description,string Platform,string? Image,string? Url,string? Seller,bool DemoListing,bool Featured,string Status,int Order);
 public sealed record SettingsRequest(string WhatsappNumber);

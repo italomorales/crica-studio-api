@@ -20,11 +20,11 @@ public static class CatalogEndpoints
             }));
         });
 
-        group.MapGet("/products", async (int page, int pageSize, string? query, Guid? typeId, CatalogReadService catalog, CancellationToken cancellationToken) =>
+        group.MapGet("/products", async (int page, int pageSize, string? query, Guid? typeId, bool featured, CatalogReadService catalog, CancellationToken cancellationToken) =>
         {
             page = Math.Max(page, 1);
             pageSize = Math.Clamp(pageSize, 1, 24);
-            var result = await catalog.GetPublishedShopProductPageAsync(page, pageSize, query, typeId, cancellationToken);
+            var result = await catalog.GetPublishedShopProductPageAsync(page, pageSize, query, typeId, featured, cancellationToken);
             return Results.Ok(new
             {
                 items = result.Items.Select(product => new
@@ -37,6 +37,7 @@ public static class CatalogEndpoints
                     priceMode = product.PriceMode,
                     price = product.Price,
                     demo = product.IsDemo,
+                    featured = product.IsFeatured,
                     characteristics = product.Characteristics,
                     personalization = product.Personalization,
                     images = product.Images.Select(image => image.Url),
@@ -47,11 +48,11 @@ public static class CatalogEndpoints
             });
         });
 
-        group.MapGet("/affiliates", async (int page, int pageSize, string? query, string? platform, CatalogReadService catalog, CancellationToken cancellationToken) =>
+        group.MapGet("/affiliates", async (int page, int pageSize, string? query, string? platform, bool featured, CatalogReadService catalog, CancellationToken cancellationToken) =>
         {
             page = Math.Max(page, 1);
             pageSize = Math.Clamp(pageSize, 1, 24);
-            var result = await catalog.GetPublishedAffiliateProductPageAsync(page, pageSize, query, platform, cancellationToken);
+            var result = await catalog.GetPublishedAffiliateProductPageAsync(page, pageSize, query, platform, featured, cancellationToken);
             return Results.Ok(new
             {
                 items = result.Items.Select(product => new
@@ -65,6 +66,7 @@ public static class CatalogEndpoints
                     url = product.AffiliateUrl,
                     seller = product.Seller,
                     demoListing = product.IsDemoListing,
+                    featured = product.IsFeatured,
                 }),
                 result.Total,
                 page,
