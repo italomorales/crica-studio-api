@@ -20,40 +20,56 @@ public static class CatalogEndpoints
             }));
         });
 
-        group.MapGet("/products", async (CatalogReadService catalog, CancellationToken cancellationToken) =>
+        group.MapGet("/products", async (int page, int pageSize, string? query, Guid? typeId, CatalogReadService catalog, CancellationToken cancellationToken) =>
         {
-            var products = await catalog.GetPublishedShopProductsAsync(cancellationToken);
-            return Results.Ok(products.Select(product => new
+            page = Math.Max(page, 1);
+            pageSize = Math.Clamp(pageSize, 1, 24);
+            var result = await catalog.GetPublishedShopProductPageAsync(page, pageSize, query, typeId, cancellationToken);
+            return Results.Ok(new
             {
-                id = product.Id,
-                typeId = product.TypeId,
-                name = product.Name,
-                description = product.Description,
-                fullDescription = product.FullDescription,
-                priceMode = product.PriceMode,
-                price = product.Price,
-                demo = product.IsDemo,
-                characteristics = product.Characteristics,
-                personalization = product.Personalization,
-                images = product.Images.Select(image => image.Url),
-            }));
+                items = result.Items.Select(product => new
+                {
+                    id = product.Id,
+                    typeId = product.TypeId,
+                    name = product.Name,
+                    description = product.Description,
+                    fullDescription = product.FullDescription,
+                    priceMode = product.PriceMode,
+                    price = product.Price,
+                    demo = product.IsDemo,
+                    characteristics = product.Characteristics,
+                    personalization = product.Personalization,
+                    images = product.Images.Select(image => image.Url),
+                }),
+                result.Total,
+                page,
+                pageSize,
+            });
         });
 
-        group.MapGet("/affiliates", async (CatalogReadService catalog, CancellationToken cancellationToken) =>
+        group.MapGet("/affiliates", async (int page, int pageSize, string? query, string? platform, CatalogReadService catalog, CancellationToken cancellationToken) =>
         {
-            var products = await catalog.GetPublishedAffiliateProductsAsync(cancellationToken);
-            return Results.Ok(products.Select(product => new
+            page = Math.Max(page, 1);
+            pageSize = Math.Clamp(pageSize, 1, 24);
+            var result = await catalog.GetPublishedAffiliateProductPageAsync(page, pageSize, query, platform, cancellationToken);
+            return Results.Ok(new
             {
-                id = product.Id,
-                typeId = product.TypeId,
-                name = product.Name,
-                description = product.Description,
-                platform = product.Platform,
-                image = product.ImageUrl,
-                url = product.AffiliateUrl,
-                seller = product.Seller,
-                demoListing = product.IsDemoListing,
-            }));
+                items = result.Items.Select(product => new
+                {
+                    id = product.Id,
+                    typeId = product.TypeId,
+                    name = product.Name,
+                    description = product.Description,
+                    platform = product.Platform,
+                    image = product.ImageUrl,
+                    url = product.AffiliateUrl,
+                    seller = product.Seller,
+                    demoListing = product.IsDemoListing,
+                }),
+                result.Total,
+                page,
+                pageSize,
+            });
         });
 
         group.MapGet("/settings", async (CatalogReadService catalog, CancellationToken cancellationToken) =>

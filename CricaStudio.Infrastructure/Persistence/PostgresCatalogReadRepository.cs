@@ -1,6 +1,7 @@
 using System.Text.Json;
 using CricaStudio.Domain.Catalog;
 using Npgsql;
+using NpgsqlTypes;
 
 namespace CricaStudio.Infrastructure.Persistence;
 
@@ -38,6 +39,57 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
     public async Task<IReadOnlyList<ShopProduct>> GetPublishedShopProductsAsync(CancellationToken cancellationToken)
     {
         return await GetShopProductsAsync(onlyPublished: true, cancellationToken);
+    }
+
+    public async Task<CatalogPage<ShopProduct>> GetPublishedShopProductPageAsync(int page, int pageSize, string? query, Guid? typeId, CancellationToken cancellationToken)
+    {
+        const string filters = """
+            p.status = 'published'
+            AND (@typeId IS NULL OR p.type_id = @typeId)
+            AND (@query = '' OR translate(lower(p.name || ' ' || p.description), 'áàãâäéèêëíìîïóòõôöúùûüç', 'aaaaaeeeeiiiiooooouuuuc') LIKE '%' || @query || '%')
+            """;
+        var total = await CountAsync("cricastudio.shop_products p", filters, query, typeId, null, cancellationToken);
+        var sql = $"""
+            WITH selected AS (
+                SELECT p.id, p.type_id, p.name, p.description, p.full_description, p.price_mode, p.price,
+                       p.is_demo, p.characteristics::text AS characteristics, p.personalization::text AS personalization,
+                       p.status, p.sort_order, p.created_at
+                FROM cricastudio.shop_products p
+                WHERE {filters}
+                ORDER BY p.sort_order, p.created_at, p.id
+                LIMIT @limit OFFSET @offset
+            )
+            SELECT p.id, p.type_id, p.name, p.description, p.full_description, p.price_mode, p.price,
+                   p.is_demo, p.characteristics, p.personalization, p.status, p.sort_order,
+                   i.id, i.image_url, i.sort_order
+            FROM selected p
+            LEFT JOIN cricastudio.shop_product_images i ON i.product_id = p.id
+            ORDER BY p.sort_order, p.created_at, p.id, i.sort_order, i.created_at;
+            """;
+        var products = new List<ShopProduct>();
+        var imagesByProduct = new Dictionary<Guid, List<ProductImage>>();
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        AddPageParameters(command, page, pageSize, query, typeId, null);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var id = reader.GetGuid(0);
+            if (!imagesByProduct.TryGetValue(id, out var images))
+            {
+                images = [];
+                imagesByProduct[id] = images;
+                products.Add(new ShopProduct(
+                    id, reader.GetGuid(1), reader.GetString(2), reader.GetString(3),
+                    reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetString(5),
+                    reader.IsDBNull(6) ? null : reader.GetDecimal(6), reader.GetBoolean(7),
+                    DeserializeStrings(reader.GetString(8)), DeserializeStrings(reader.GetString(9)), images,
+                    reader.GetString(10), reader.GetInt32(11)));
+            }
+            if (!reader.IsDBNull(12)) images.Add(new ProductImage(reader.GetGuid(12), reader.GetString(13), reader.GetInt32(14)));
+        }
+        return new CatalogPage<ShopProduct>(products, total);
     }
 
     public async Task<IReadOnlyList<ShopProduct>> GetAllShopProductsAsync(CancellationToken cancellationToken)
@@ -89,6 +141,37 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
         return await GetAffiliateProductsAsync(onlyPublished: true, cancellationToken);
     }
 
+    public async Task<CatalogPage<AffiliateProduct>> GetPublishedAffiliateProductPageAsync(int page, int pageSize, string? query, string? platform, CancellationToken cancellationToken)
+    {
+        const string filters = """
+            p.status = 'published'
+            AND (@platform IS NULL OR p.platform = @platform)
+            AND (@query = '' OR translate(lower(p.name || ' ' || p.description), 'áàãâäéèêëíìîïóòõôöúùûüç', 'aaaaaeeeeiiiiooooouuuuc') LIKE '%' || @query || '%')
+            """;
+        var total = await CountAsync("cricastudio.affiliate_products p", filters, query, null, platform, cancellationToken);
+        var sql = $"""
+            SELECT p.id, p.type_id, p.name, p.description, p.platform, p.image_url, p.affiliate_url, p.seller,
+                   p.is_demo_listing, p.status, p.sort_order
+            FROM cricastudio.affiliate_products p
+            WHERE {filters}
+            ORDER BY p.sort_order, p.created_at, p.id
+            LIMIT @limit OFFSET @offset;
+            """;
+        var products = new List<AffiliateProduct>();
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        AddPageParameters(command, page, pageSize, query, null, platform);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            products.Add(new AffiliateProduct(
+                reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3),
+                reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5),
+                reader.IsDBNull(6) ? null : reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7),
+                reader.GetBoolean(8), reader.GetString(9), reader.GetInt32(10)));
+        return new CatalogPage<AffiliateProduct>(products, total);
+    }
+
     public async Task<IReadOnlyList<AffiliateProduct>> GetAllAffiliateProductsAsync(CancellationToken cancellationToken)
     {
         return await GetAffiliateProductsAsync(onlyPublished: false, cancellationToken);
@@ -130,4 +213,22 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
 
     private static IReadOnlyList<string> DeserializeStrings(string value) =>
         JsonSerializer.Deserialize<string[]>(value) ?? [];
+
+    private async Task<int> CountAsync(string table, string filters, string? query, Guid? typeId, string? platform, CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand($"SELECT count(*) FROM {table} WHERE {filters};", connection);
+        AddPageParameters(command, 1, 1, query, typeId, platform);
+        return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
+    }
+
+    private static void AddPageParameters(NpgsqlCommand command, int page, int pageSize, string? query, Guid? typeId, string? platform)
+    {
+        command.Parameters.Add("query", NpgsqlDbType.Text).Value = query ?? string.Empty;
+        command.Parameters.Add("typeId", NpgsqlDbType.Uuid).Value = (object?)typeId ?? DBNull.Value;
+        command.Parameters.Add("platform", NpgsqlDbType.Text).Value = (object?)platform ?? DBNull.Value;
+        command.Parameters.Add("limit", NpgsqlDbType.Integer).Value = pageSize;
+        command.Parameters.Add("offset", NpgsqlDbType.Integer).Value = (page - 1) * pageSize;
+    }
 }

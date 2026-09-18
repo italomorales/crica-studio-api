@@ -1,5 +1,7 @@
 namespace CricaStudio.Domain.Catalog;
 
+public sealed record CatalogPage<T>(IReadOnlyList<T> Items, int Total);
+
 public sealed record CatalogType(Guid Id, string Name, string Scope, bool IsActive);
 
 public sealed record ProductImage(Guid Id, string Url, int SortOrder);
