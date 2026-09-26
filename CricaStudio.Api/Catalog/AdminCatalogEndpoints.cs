@@ -56,6 +56,7 @@ public static class AdminCatalogEndpoints
                 description = product.Description,
                 platform = product.Platform,
                 image = product.ImageUrl,
+                images = product.Images,
                 url = product.AffiliateUrl,
                 seller = product.Seller,
                 demoListing = product.IsDemoListing,
@@ -141,10 +142,11 @@ public static class AdminCatalogEndpoints
 
     private static async Task<IResult> SaveAffiliate(AffiliateRequest r, Guid id, ICatalogWriteRepository repo, CancellationToken ct)
     {
+        var images = r.Images ?? (string.IsNullOrWhiteSpace(r.Image) ? [] : new[] { r.Image });
         if (r.TypeId == Guid.Empty || string.IsNullOrWhiteSpace(r.Name) || string.IsNullOrWhiteSpace(r.Description) || r.Order < 0 ||
             !new[] { "draft", "published", "inactive" }.Contains(r.Status) || !new[] { "Shopee", "Mercado Livre", "TikTok Shop", "AliExpress", "Outra" }.Contains(r.Platform) ||
-            (r.Image is not null && !IsAllowedImageUrl(r.Image)) || (r.Url is not null && !IsHttpsUrl(r.Url)) ||
-            (r.Status == "published" && !r.DemoListing && (string.IsNullOrWhiteSpace(r.Image) || string.IsNullOrWhiteSpace(r.Url))))
+            (images.Length > 5 || images.Any(image => !IsAllowedImageUrl(image))) || (r.Url is not null && !IsHttpsUrl(r.Url)) ||
+            (r.Status == "published" && !r.DemoListing && (images.Length == 0 || string.IsNullOrWhiteSpace(r.Url))))
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["affiliate"] = ["Confira os campos obrigatórios, a foto principal e o link HTTPS da indicação."] });
 
         if (r.Featured && r.Status != "published")
@@ -152,7 +154,7 @@ public static class AdminCatalogEndpoints
         if (r.Featured && await repo.CountPublishedFeaturedAffiliateProductsAsync(id, ct) >= 3)
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["affiliate"] = ["Escolha no máximo três fornecedores em destaque."] });
 
-        var affiliate = await repo.SaveAffiliateProductAsync(new AffiliateProduct(id, r.TypeId, r.Name.Trim(), r.Description.Trim(), r.Platform, r.Image?.Trim(), r.Url?.Trim(), r.Seller?.Trim(), r.DemoListing, r.Featured, r.Status, r.Order), ct);
+        var affiliate = await repo.SaveAffiliateProductAsync(new AffiliateProduct(id, r.TypeId, r.Name.Trim(), r.Description.Trim(), r.Platform, images.FirstOrDefault()?.Trim(), r.Url?.Trim(), r.Seller?.Trim(), r.DemoListing, r.Featured, r.Status, r.Order) { Images = images.Select(image => image.Trim()).ToArray() }, ct);
         return Results.Ok(new { id = affiliate.Id });
     }
 
@@ -165,5 +167,5 @@ public static class AdminCatalogEndpoints
 
 public sealed record TypeRequest(Guid Id, string Name, string Scope, bool Active);
 public sealed record ProductRequest(Guid TypeId,string Name,string Description,string? FullDescription,string PriceMode,decimal? Price,bool Demo,bool Featured,string[]? Characteristics,string[]? Personalization,string[]? Images,string Status,int Order);
-public sealed record AffiliateRequest(Guid TypeId,string Name,string Description,string Platform,string? Image,string? Url,string? Seller,bool DemoListing,bool Featured,string Status,int Order);
+public sealed record AffiliateRequest(Guid TypeId,string Name,string Description,string Platform,string? Image,string? Url,string? Seller,bool DemoListing,bool Featured,string Status,int Order,string[]? Images = null);
 public sealed record SettingsRequest(string WhatsappNumber);

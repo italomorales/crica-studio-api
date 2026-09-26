@@ -63,6 +63,7 @@ public static class CatalogEndpoints
                     description = product.Description,
                     platform = product.Platform,
                     image = product.ImageUrl,
+                    images = product.Images,
                     url = product.AffiliateUrl,
                     seller = product.Seller,
                     demoListing = product.IsDemoListing,

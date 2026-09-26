@@ -34,6 +34,9 @@ public sealed record AffiliateProduct(
     bool IsDemoListing,
     bool IsFeatured,
     string Status,
-    int SortOrder);
+    int SortOrder)
+{
+    public IReadOnlyList<string> Images { get; init; } = [];
+}
 
 public sealed record CatalogSettings(string WhatsappNumber);
