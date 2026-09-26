@@ -6,6 +6,29 @@ namespace CricaStudio.Infrastructure.Persistence;
 
 public sealed class PostgresCatalogWriteRepository(string connectionString) : ICatalogWriteRepository
 {
+    // The entire sequence is committed atomically. Reject a stale list instead of
+    // overwriting another administrator's ordering or omitting a new record.
+    public async Task<bool> ReorderAsync(bool suppliers, IReadOnlyList<Guid> ids, IReadOnlyList<CatalogOrderEntry> expected, CancellationToken ct)
+    {
+        if (ids.Count == 0 || ids.Distinct().Count() != ids.Count || expected.Count != ids.Count || expected.Select(x => x.Id).Distinct().Count() != expected.Count || !ids.ToHashSet().SetEquals(expected.Select(x => x.Id))) return false;
+        var table = suppliers ? "affiliate_products" : "shop_products";
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(ct);
+        await using var transaction = await connection.BeginTransactionAsync(ct);
+        await using (var command = new NpgsqlCommand($"LOCK TABLE cricastudio.{table} IN SHARE ROW EXCLUSIVE MODE", connection, transaction)) await command.ExecuteNonQueryAsync(ct);
+        var current = new Dictionary<Guid, int>();
+        await using (var command = new NpgsqlCommand($"SELECT id, sort_order FROM cricastudio.{table}", connection, transaction))
+        await using (var reader = await command.ExecuteReaderAsync(ct))
+            while (await reader.ReadAsync(ct)) current.Add(reader.GetGuid(0), reader.GetInt32(1));
+        if (current.Count != expected.Count || expected.Any(item => !current.TryGetValue(item.Id, out var order) || order != item.Order)) return false;
+        await using (var command = new NpgsqlCommand($"UPDATE cricastudio.{table} AS p SET sort_order = ordered.position::int FROM unnest(@ids::uuid[]) WITH ORDINALITY AS ordered(id, position) WHERE p.id = ordered.id", connection, transaction))
+        {
+            command.Parameters.AddWithValue("ids", ids.ToArray());
+            await command.ExecuteNonQueryAsync(ct);
+        }
+        await transaction.CommitAsync(ct);
+        return true;
+    }
     public async Task<CatalogType> SaveTypeAsync(CatalogType type, CancellationToken cancellationToken)
     {
         var id = type.Id == Guid.Empty ? Guid.NewGuid() : type.Id;

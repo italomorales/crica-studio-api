@@ -113,6 +113,8 @@ public static class AdminCatalogEndpoints
             await repo.DeleteTypeAsync(id, ct);
             return Results.NoContent();
         });
+        group.MapPut("/products/order", (CatalogOrderRequest request, ICatalogWriteRepository repo, CancellationToken ct) => Reorder(request, false, repo, ct));
+        group.MapPut("/affiliates/order", (CatalogOrderRequest request, ICatalogWriteRepository repo, CancellationToken ct) => Reorder(request, true, repo, ct));
         group.MapPost("/products", (ProductRequest request, ICatalogWriteRepository repo, CancellationToken ct) => SaveProduct(request, Guid.Empty, repo, ct));
         group.MapPut("/products/{id:guid}", (Guid id, ProductRequest request, ICatalogWriteRepository repo, CancellationToken ct) => SaveProduct(request, id, repo, ct));
         group.MapDelete("/products/{id:guid}", async (Guid id, ICatalogWriteRepository repo, CancellationToken ct) => { await repo.DeleteShopProductAsync(id,ct); return Results.NoContent(); });
@@ -122,6 +124,13 @@ public static class AdminCatalogEndpoints
         group.MapPut("/settings", async (SettingsRequest request, ICatalogWriteRepository repo, CancellationToken ct) => { if (!string.IsNullOrEmpty(request.WhatsappNumber) && !System.Text.RegularExpressions.Regex.IsMatch(request.WhatsappNumber,"^[1-9]\\d{7,14}$")) return Results.ValidationProblem(new Dictionary<string,string[]> { ["whatsappNumber"]=["Informe somente dígitos do número internacional."] }); await repo.SaveSettingsAsync(new CatalogSettings(request.WhatsappNumber),ct); return Results.NoContent(); });
     }
 
+    private static async Task<IResult> Reorder(CatalogOrderRequest request, bool suppliers, ICatalogWriteRepository repo, CancellationToken ct)
+    {
+        if (request.Ids is null || request.Expected is null || request.Ids.Length == 0 || request.Ids.Any(id => id == Guid.Empty) || request.Ids.Distinct().Count() != request.Ids.Length)
+            return Results.Problem(detail: "A sequência informada é inválida.", statusCode: 400);
+        var saved = await repo.ReorderAsync(suppliers, request.Ids, request.Expected, ct);
+        return saved ? Results.NoContent() : Results.Problem(detail: "O catálogo foi alterado enquanto você organizava. Cancele a organização, atualize a página e tente novamente.", statusCode: 409);
+    }
     private static async Task<IResult> SaveProduct(ProductRequest r, Guid id, ICatalogWriteRepository repo, CancellationToken ct)
     {
         var images = r.Images ?? [];
@@ -169,3 +178,5 @@ public sealed record TypeRequest(Guid Id, string Name, string Scope, bool Active
 public sealed record ProductRequest(Guid TypeId,string Name,string Description,string? FullDescription,string PriceMode,decimal? Price,bool Demo,bool Featured,string[]? Characteristics,string[]? Personalization,string[]? Images,string Status,int Order);
 public sealed record AffiliateRequest(Guid TypeId,string Name,string Description,string Platform,string? Image,string? Url,string? Seller,bool DemoListing,bool Featured,string Status,int Order,string[]? Images = null);
 public sealed record SettingsRequest(string WhatsappNumber);
+
+public sealed record CatalogOrderRequest(Guid[]? Ids, CatalogOrderEntry[]? Expected);
