@@ -103,7 +103,15 @@ public static class AdminCatalogEndpoints
             var saved = await repo.SaveTypeAsync(new CatalogType(id, request.Name.Trim(), request.Scope, request.Active), ct);
             return Results.Ok(new { id=saved.Id, name=saved.Name, scope=saved.Scope, active=saved.IsActive });
         });
-        group.MapDelete("/types/{id:guid}", async (Guid id, ICatalogWriteRepository repo, CancellationToken ct) => { await repo.DeleteTypeAsync(id,ct); return Results.NoContent(); });
+        group.MapDelete("/types/{id:guid}", async (Guid id, CatalogReadService catalog, ICatalogWriteRepository repo, CancellationToken ct) =>
+        {
+            var isInUse = (await catalog.GetAllShopProductsAsync(ct)).Any(product => product.TypeId == id)
+                || (await catalog.GetAllAffiliateProductsAsync(ct)).Any(product => product.TypeId == id);
+            if (isInUse)
+                return Results.ValidationProblem(new Dictionary<string, string[]> { ["type"] = ["Este tipo possui cadastros vinculados e não pode ser excluído."] });
+            await repo.DeleteTypeAsync(id, ct);
+            return Results.NoContent();
+        });
         group.MapPost("/products", (ProductRequest request, ICatalogWriteRepository repo, CancellationToken ct) => SaveProduct(request, Guid.Empty, repo, ct));
         group.MapPut("/products/{id:guid}", (Guid id, ProductRequest request, ICatalogWriteRepository repo, CancellationToken ct) => SaveProduct(request, id, repo, ct));
         group.MapDelete("/products/{id:guid}", async (Guid id, ICatalogWriteRepository repo, CancellationToken ct) => { await repo.DeleteShopProductAsync(id,ct); return Results.NoContent(); });
