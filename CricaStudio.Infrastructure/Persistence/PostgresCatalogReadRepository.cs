@@ -52,7 +52,7 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
         var total = await CountAsync("cricastudio.shop_products p", filters, query, typeId, null, featuredOnly, cancellationToken);
         var sql = $"""
             WITH selected AS (
-                SELECT p.id, p.type_id, p.name, p.description, p.full_description, p.price_mode, p.price,
+                SELECT p.id, p.type_id, p.name, p.slug, p.description, p.full_description, p.price_mode, p.price,
                        p.is_demo, p.is_featured, p.characteristics::text AS characteristics, p.personalization::text AS personalization,
                        p.status, p.sort_order, p.created_at
                 FROM cricastudio.shop_products p
@@ -60,7 +60,7 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
                 ORDER BY p.sort_order, p.created_at, p.id
                 LIMIT @limit OFFSET @offset
             )
-            SELECT p.id, p.type_id, p.name, p.description, p.full_description, p.price_mode, p.price,
+            SELECT p.id, p.type_id, p.name, p.slug, p.description, p.full_description, p.price_mode, p.price,
                    p.is_demo, p.is_featured, p.characteristics, p.personalization, p.status, p.sort_order,
                    i.id, i.image_url, i.sort_order
             FROM selected p
@@ -82,13 +82,13 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
                 images = [];
                 imagesByProduct[id] = images;
                 products.Add(new ShopProduct(
-                    id, reader.GetGuid(1), reader.GetString(2), reader.GetString(3),
-                    reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetString(5),
-                    reader.IsDBNull(6) ? null : reader.GetDecimal(6), reader.GetBoolean(7), reader.GetBoolean(8),
-                    DeserializeStrings(reader.GetString(9)), DeserializeStrings(reader.GetString(10)), images,
-                    reader.GetString(11), reader.GetInt32(12)));
+                    id, reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetString(4),
+                    reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetString(6),
+                    reader.IsDBNull(7) ? null : reader.GetDecimal(7), reader.GetBoolean(8), reader.GetBoolean(9),
+                    DeserializeStrings(reader.GetString(10)), DeserializeStrings(reader.GetString(11)), images,
+                    reader.GetString(12), reader.GetInt32(13)));
             }
-            if (!reader.IsDBNull(13)) images.Add(new ProductImage(reader.GetGuid(13), reader.GetString(14), reader.GetInt32(15)));
+            if (!reader.IsDBNull(14)) images.Add(new ProductImage(reader.GetGuid(14), reader.GetString(15), reader.GetInt32(16)));
         }
         return new CatalogPage<ShopProduct>(products, total);
     }
@@ -98,10 +98,16 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
         return await GetShopProductsAsync(onlyPublished: false, cancellationToken);
     }
 
+    public async Task<ShopProduct?> GetPublishedShopProductBySlugAsync(string slug, CancellationToken cancellationToken)
+    {
+        var products = await GetShopProductsAsync(onlyPublished: true, cancellationToken);
+        return products.SingleOrDefault(product => string.Equals(product.Slug, slug, StringComparison.OrdinalIgnoreCase));
+    }
+
     private async Task<IReadOnlyList<ShopProduct>> GetShopProductsAsync(bool onlyPublished, CancellationToken cancellationToken)
     {
         var sql = $"""
-            SELECT p.id, p.type_id, p.name, p.description, p.full_description, p.price_mode, p.price,
+            SELECT p.id, p.type_id, p.name, p.slug, p.description, p.full_description, p.price_mode, p.price,
                     p.is_demo, p.is_featured, p.characteristics::text, p.personalization::text, p.status, p.sort_order,
                    i.id, i.image_url, i.sort_order
             FROM cricastudio.shop_products p
@@ -124,15 +130,15 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
                 images = [];
                 imagesByProduct[id] = images;
                 products.Add(new ShopProduct(
-                    id, reader.GetGuid(1), reader.GetString(2), reader.GetString(3),
-                    reader.IsDBNull(4) ? null : reader.GetString(4), reader.GetString(5),
-                    reader.IsDBNull(6) ? null : reader.GetDecimal(6), reader.GetBoolean(7), reader.GetBoolean(8),
-                    DeserializeStrings(reader.GetString(9)), DeserializeStrings(reader.GetString(10)), images,
-                    reader.GetString(11), reader.GetInt32(12)));
+                    id, reader.GetGuid(1), reader.GetString(2), reader.GetString(3), reader.GetString(4),
+                    reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetString(6),
+                    reader.IsDBNull(7) ? null : reader.GetDecimal(7), reader.GetBoolean(8), reader.GetBoolean(9),
+                    DeserializeStrings(reader.GetString(10)), DeserializeStrings(reader.GetString(11)), images,
+                    reader.GetString(12), reader.GetInt32(13)));
             }
 
-            if (!reader.IsDBNull(13))
-                images.Add(new ProductImage(reader.GetGuid(13), reader.GetString(14), reader.GetInt32(15)));
+            if (!reader.IsDBNull(14))
+                images.Add(new ProductImage(reader.GetGuid(14), reader.GetString(15), reader.GetInt32(16)));
         }
         return products;
     }

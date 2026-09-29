@@ -32,6 +32,7 @@ public static class CatalogEndpoints
                     id = product.Id,
                     typeId = product.TypeId,
                     name = product.Name,
+                    slug = product.Slug,
                     description = product.Description,
                     fullDescription = product.FullDescription,
                     priceMode = product.PriceMode,
@@ -45,6 +46,27 @@ public static class CatalogEndpoints
                 result.Total,
                 page,
                 pageSize,
+            });
+        });
+
+        group.MapGet("/products/{slug}", async (string slug, CatalogReadService catalog, CancellationToken cancellationToken) =>
+        {
+            var product = await catalog.GetPublishedShopProductBySlugAsync(slug, cancellationToken);
+            return product is null ? Results.NotFound() : Results.Ok(new
+            {
+                id = product.Id,
+                typeId = product.TypeId,
+                name = product.Name,
+                slug = product.Slug,
+                description = product.Description,
+                fullDescription = product.FullDescription,
+                priceMode = product.PriceMode,
+                price = product.Price,
+                demo = product.IsDemo,
+                featured = product.IsFeatured,
+                characteristics = product.Characteristics,
+                personalization = product.Personalization,
+                images = product.Images.Select(image => image.Url),
             });
         });
 

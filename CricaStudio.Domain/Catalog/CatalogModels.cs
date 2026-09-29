@@ -10,6 +10,7 @@ public sealed record ShopProduct(
     Guid Id,
     Guid TypeId,
     string Name,
+    string Slug,
     string Description,
     string? FullDescription,
     string PriceMode,

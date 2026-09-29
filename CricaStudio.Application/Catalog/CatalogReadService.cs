@@ -16,6 +16,9 @@ public sealed class CatalogReadService(ICatalogReadRepository repository)
     public Task<CatalogPage<ShopProduct>> GetPublishedShopProductPageAsync(int page, int pageSize, string? query, Guid? typeId, bool featuredOnly, CancellationToken cancellationToken) =>
         repository.GetPublishedShopProductPageAsync(page, pageSize, query, typeId, featuredOnly, cancellationToken);
 
+    public Task<ShopProduct?> GetPublishedShopProductBySlugAsync(string slug, CancellationToken cancellationToken) =>
+        repository.GetPublishedShopProductBySlugAsync(slug, cancellationToken);
+
     public Task<IReadOnlyList<ShopProduct>> GetAllShopProductsAsync(CancellationToken cancellationToken) =>
         repository.GetAllShopProductsAsync(cancellationToken);
 

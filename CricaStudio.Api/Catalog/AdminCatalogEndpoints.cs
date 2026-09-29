@@ -31,6 +31,7 @@ public static class AdminCatalogEndpoints
                 id = product.Id,
                 typeId = product.TypeId,
                 name = product.Name,
+                slug = product.Slug,
                 description = product.Description,
                 fullDescription = product.FullDescription,
                 priceMode = product.PriceMode,
@@ -115,8 +116,8 @@ public static class AdminCatalogEndpoints
         });
         group.MapPut("/products/order", (CatalogOrderRequest request, ICatalogWriteRepository repo, CancellationToken ct) => Reorder(request, false, repo, ct));
         group.MapPut("/affiliates/order", (CatalogOrderRequest request, ICatalogWriteRepository repo, CancellationToken ct) => Reorder(request, true, repo, ct));
-        group.MapPost("/products", (ProductRequest request, ICatalogWriteRepository repo, CancellationToken ct) => SaveProduct(request, Guid.Empty, repo, ct));
-        group.MapPut("/products/{id:guid}", (Guid id, ProductRequest request, ICatalogWriteRepository repo, CancellationToken ct) => SaveProduct(request, id, repo, ct));
+        group.MapPost("/products", (ProductRequest request, CatalogReadService catalog, ICatalogWriteRepository repo, CancellationToken ct) => SaveProduct(request, Guid.Empty, catalog, repo, ct));
+        group.MapPut("/products/{id:guid}", (Guid id, ProductRequest request, CatalogReadService catalog, ICatalogWriteRepository repo, CancellationToken ct) => SaveProduct(request, id, catalog, repo, ct));
         group.MapDelete("/products/{id:guid}", async (Guid id, ICatalogWriteRepository repo, CancellationToken ct) => { await repo.DeleteShopProductAsync(id,ct); return Results.NoContent(); });
         group.MapPost("/affiliates", (AffiliateRequest request, ICatalogWriteRepository repo, CancellationToken ct) => SaveAffiliate(request, Guid.Empty, repo, ct));
         group.MapPut("/affiliates/{id:guid}", (Guid id, AffiliateRequest request, ICatalogWriteRepository repo, CancellationToken ct) => SaveAffiliate(request, id, repo, ct));
@@ -131,7 +132,7 @@ public static class AdminCatalogEndpoints
         var saved = await repo.ReorderAsync(suppliers, request.Ids, request.Expected, ct);
         return saved ? Results.NoContent() : Results.Problem(detail: "O catálogo foi alterado enquanto você organizava. Cancele a organização, atualize a página e tente novamente.", statusCode: 409);
     }
-    private static async Task<IResult> SaveProduct(ProductRequest r, Guid id, ICatalogWriteRepository repo, CancellationToken ct)
+    private static async Task<IResult> SaveProduct(ProductRequest r, Guid id, CatalogReadService catalog, ICatalogWriteRepository repo, CancellationToken ct)
     {
         var images = r.Images ?? [];
         if (r.TypeId == Guid.Empty || string.IsNullOrWhiteSpace(r.Name) || string.IsNullOrWhiteSpace(r.Description) || r.Order < 0 ||
@@ -145,7 +146,13 @@ public static class AdminCatalogEndpoints
         if (r.Featured && await repo.CountPublishedFeaturedShopProductsAsync(id, ct) >= 3)
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["product"] = ["Escolha no máximo três produtos em destaque."] });
 
-        var product = await repo.SaveShopProductAsync(new ShopProduct(id, r.TypeId, r.Name.Trim(), r.Description.Trim(), r.FullDescription?.Trim(), r.PriceMode, r.Price, r.Demo, r.Featured, r.Characteristics ?? [], r.Personalization ?? [], images.Select((url, index) => new ProductImage(Guid.NewGuid(), url, index)).ToArray(), r.Status, r.Order), ct);
+        var rootSlug = ProductSlug.From(string.IsNullOrWhiteSpace(r.Slug) ? r.Name : r.Slug);
+        if (string.IsNullOrWhiteSpace(rootSlug))
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["product"] = ["Informe um título que permita criar a URL do produto."] });
+        var usedSlugs = (await catalog.GetAllShopProductsAsync(ct)).Where(product => product.Id != id).Select(product => product.Slug).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var slug = rootSlug;
+        for (var suffix = 2; usedSlugs.Contains(slug); suffix++) slug = $"{rootSlug}-{suffix}";
+        var product = await repo.SaveShopProductAsync(new ShopProduct(id, r.TypeId, r.Name.Trim(), slug, r.Description.Trim(), r.FullDescription?.Trim(), r.PriceMode, r.Price, r.Demo, r.Featured, r.Characteristics ?? [], r.Personalization ?? [], images.Select((url, index) => new ProductImage(Guid.NewGuid(), url, index)).ToArray(), r.Status, r.Order), ct);
         return Results.Ok(new { id = product.Id });
     }
 
@@ -175,7 +182,7 @@ public static class AdminCatalogEndpoints
 }
 
 public sealed record TypeRequest(Guid Id, string Name, string Scope, bool Active);
-public sealed record ProductRequest(Guid TypeId,string Name,string Description,string? FullDescription,string PriceMode,decimal? Price,bool Demo,bool Featured,string[]? Characteristics,string[]? Personalization,string[]? Images,string Status,int Order);
+public sealed record ProductRequest(Guid TypeId,string Name,string? Slug,string Description,string? FullDescription,string PriceMode,decimal? Price,bool Demo,bool Featured,string[]? Characteristics,string[]? Personalization,string[]? Images,string Status,int Order);
 public sealed record AffiliateRequest(Guid TypeId,string Name,string Description,string Platform,string? Image,string? Url,string? Seller,bool DemoListing,bool Featured,string Status,int Order,string[]? Images = null);
 public sealed record SettingsRequest(string WhatsappNumber);
 
