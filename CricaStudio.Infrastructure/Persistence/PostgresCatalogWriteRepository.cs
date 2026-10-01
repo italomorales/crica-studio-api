@@ -6,6 +6,32 @@ namespace CricaStudio.Infrastructure.Persistence;
 
 public sealed class PostgresCatalogWriteRepository(string connectionString) : ICatalogWriteRepository
 {
+    public async Task<CatalogTheme> SaveThemeAsync(CatalogTheme theme, CancellationToken ct)
+    {
+        var id = theme.Id == Guid.Empty ? Guid.NewGuid() : theme.Id;
+        const string sql = """
+            INSERT INTO cricastudio.catalog_themes (id, name, is_active) VALUES (@id, @name, @active)
+            ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, is_active = EXCLUDED.is_active;
+            """;
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(ct);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("id", id);
+        command.Parameters.AddWithValue("name", theme.Name);
+        command.Parameters.AddWithValue("active", theme.IsActive);
+        try { await command.ExecuteNonQueryAsync(ct); }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
+        { throw new CatalogThemeValidationException("Já existe um tema com esse nome."); }
+        return theme with { Id = id };
+    }
+
+    public async Task DeleteThemeAsync(Guid id, CancellationToken ct)
+    {
+        try { await DeleteAsync("catalog_themes", id, ct); }
+        catch (PostgresException ex) when (ex.SqlState is PostgresErrorCodes.ForeignKeyViolation or PostgresErrorCodes.RestrictViolation)
+        { throw new CatalogThemeValidationException("Este tema possui produtos vinculados. Desative-o para preservar os vínculos."); }
+    }
+
     // The entire sequence is committed atomically. Reject a stale list instead of
     // overwriting another administrator's ordering or omitting a new record.
     public async Task<bool> ReorderAsync(bool suppliers, IReadOnlyList<Guid> ids, IReadOnlyList<CatalogOrderEntry> expected, CancellationToken ct)
@@ -42,10 +68,39 @@ public sealed class PostgresCatalogWriteRepository(string connectionString) : IC
     {
         var id = product.Id == Guid.Empty ? Guid.NewGuid() : product.Id;
         await using var c = new NpgsqlConnection(connectionString); await c.OpenAsync(cancellationToken); await using var tx = await c.BeginTransactionAsync(cancellationToken);
+        // Lock themes while validating and saving, so deactivation/deletion cannot race the links.
+        var selectedThemes = product.ThemeIds.Distinct().ToArray();
+        var availableThemes = new Dictionary<Guid, bool>();
+        await using (var command = new NpgsqlCommand("SELECT id, is_active FROM cricastudio.catalog_themes WHERE id = ANY(@ids) ORDER BY id FOR SHARE", c, tx))
+        {
+            command.Parameters.AddWithValue("ids", selectedThemes);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken)) availableThemes.Add(reader.GetGuid(0), reader.GetBoolean(1));
+        }
+        var previousThemes = new HashSet<Guid>();
+        await using (var command = new NpgsqlCommand("SELECT theme_id FROM cricastudio.shop_product_themes WHERE product_id = @id", c, tx))
+        {
+            command.Parameters.AddWithValue("id", id);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken)) previousThemes.Add(reader.GetGuid(0));
+        }
+        if (selectedThemes.Any(themeId => !availableThemes.TryGetValue(themeId, out var active) || (!active && !previousThemes.Contains(themeId))))
+            throw new CatalogThemeValidationException("Escolha temas ativos. Temas inativos só podem ser mantidos nos produtos já associados.");
         const string sql = """INSERT INTO cricastudio.shop_products (id,type_id,name,slug,description,full_description,price_mode,price,is_demo,is_featured,characteristics,personalization,status,sort_order) VALUES (@id,@typeId,@name,@slug,@description,@fullDescription,@priceMode,@price,@demo,@featured,@characteristics::jsonb,@personalization::jsonb,@status,@order) ON CONFLICT (id) DO UPDATE SET type_id=EXCLUDED.type_id,name=EXCLUDED.name,slug=EXCLUDED.slug,description=EXCLUDED.description,full_description=EXCLUDED.full_description,price_mode=EXCLUDED.price_mode,price=EXCLUDED.price,is_demo=EXCLUDED.is_demo,is_featured=EXCLUDED.is_featured,characteristics=EXCLUDED.characteristics,personalization=EXCLUDED.personalization,status=EXCLUDED.status,sort_order=EXCLUDED.sort_order;""";
         await using (var cmd = new NpgsqlCommand(sql, c, tx)) { AddProductParameters(cmd, product, id); await cmd.ExecuteNonQueryAsync(cancellationToken); }
         await using (var cmd = new NpgsqlCommand("DELETE FROM cricastudio.shop_product_images WHERE product_id=@id;", c, tx)) { cmd.Parameters.AddWithValue("id", id); await cmd.ExecuteNonQueryAsync(cancellationToken); }
         foreach (var image in product.Images.Select((image, index) => new { image, index })) { await using var cmd = new NpgsqlCommand("INSERT INTO cricastudio.shop_product_images (id,product_id,image_url,sort_order) VALUES (@id,@productId,@url,@order);", c, tx); cmd.Parameters.AddWithValue("id", image.image.Id == Guid.Empty ? Guid.NewGuid() : image.image.Id); cmd.Parameters.AddWithValue("productId", id); cmd.Parameters.AddWithValue("url", image.image.Url); cmd.Parameters.AddWithValue("order", image.index); await cmd.ExecuteNonQueryAsync(cancellationToken); }
+        await using (var command = new NpgsqlCommand("DELETE FROM cricastudio.shop_product_themes WHERE product_id = @id", c, tx))
+        {
+            command.Parameters.AddWithValue("id", id);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        await using (var command = new NpgsqlCommand("INSERT INTO cricastudio.shop_product_themes (product_id, theme_id) SELECT @id, unnest(@ids::uuid[])", c, tx))
+        {
+            command.Parameters.AddWithValue("id", id);
+            command.Parameters.AddWithValue("ids", selectedThemes);
+            await command.ExecuteNonQueryAsync(cancellationToken);
+        }
         await tx.CommitAsync(cancellationToken);
         return product with { Id = id, Images = product.Images.Select((image, index) => image with { SortOrder = index }).ToArray() };
     }

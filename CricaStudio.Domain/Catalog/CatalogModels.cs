@@ -4,6 +4,9 @@ public sealed record CatalogPage<T>(IReadOnlyList<T> Items, int Total);
 
 public sealed record CatalogType(Guid Id, string Name, string Scope, bool IsActive);
 
+public sealed record CatalogTheme(Guid Id, string Name, bool IsActive, int ProductCount = 0);
+public sealed class CatalogThemeValidationException(string message) : Exception(message);
+
 public sealed record ProductImage(Guid Id, string Url, int SortOrder);
 
 public sealed record ShopProduct(
@@ -21,7 +24,10 @@ public sealed record ShopProduct(
     IReadOnlyList<string> Personalization,
     IReadOnlyList<ProductImage> Images,
     string Status,
-    int SortOrder);
+    int SortOrder)
+{
+    public IReadOnlyList<Guid> ThemeIds { get; init; } = [];
+}
 
 public sealed record AffiliateProduct(
     Guid Id,

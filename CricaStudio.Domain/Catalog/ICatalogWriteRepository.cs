@@ -2,6 +2,8 @@ namespace CricaStudio.Domain.Catalog;
 
 public interface ICatalogWriteRepository
 {
+    Task<CatalogTheme> SaveThemeAsync(CatalogTheme theme, CancellationToken cancellationToken);
+    Task DeleteThemeAsync(Guid id, CancellationToken cancellationToken);
     Task<bool> ReorderAsync(bool suppliers, IReadOnlyList<Guid> ids, IReadOnlyList<CatalogOrderEntry> expected, CancellationToken cancellationToken);
     Task<CatalogType> SaveTypeAsync(CatalogType type, CancellationToken cancellationToken);
     Task<ShopProduct> SaveShopProductAsync(ShopProduct product, CancellationToken cancellationToken);

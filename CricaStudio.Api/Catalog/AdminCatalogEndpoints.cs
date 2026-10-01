@@ -11,6 +11,16 @@ public static class AdminCatalogEndpoints
     {
         var group = app.MapGroup("/api/admin/catalog").RequireAuthorization().WithTags("Admin catalog");
 
+        group.MapGet("/themes", async (CatalogReadService catalog, CancellationToken ct) =>
+            Results.Ok((await catalog.GetThemesAsync(false, ct)).Select(t => new { id = t.Id, name = t.Name, active = t.IsActive, productCount = t.ProductCount })));
+        group.MapPost("/themes", (ThemeRequest request, ICatalogWriteRepository repo, CancellationToken ct) => SaveTheme(request, Guid.Empty, repo, ct));
+        group.MapPut("/themes/{id:guid}", (Guid id, ThemeRequest request, ICatalogWriteRepository repo, CancellationToken ct) => SaveTheme(request, id, repo, ct));
+        group.MapDelete("/themes/{id:guid}", async (Guid id, ICatalogWriteRepository repo, CancellationToken ct) =>
+        {
+            try { await repo.DeleteThemeAsync(id, ct); return Results.NoContent(); }
+            catch (CatalogThemeValidationException ex) { return ThemeProblem(ex.Message); }
+        });
+
         group.MapGet("/types", async (CatalogReadService catalog, CancellationToken cancellationToken) =>
         {
             var types = await catalog.GetAllTypesAsync(cancellationToken);
@@ -30,6 +40,7 @@ public static class AdminCatalogEndpoints
             {
                 id = product.Id,
                 typeId = product.TypeId,
+                themeIds = product.ThemeIds,
                 name = product.Name,
                 slug = product.Slug,
                 description = product.Description,
@@ -125,6 +136,21 @@ public static class AdminCatalogEndpoints
         group.MapPut("/settings", async (SettingsRequest request, ICatalogWriteRepository repo, CancellationToken ct) => { if (!string.IsNullOrEmpty(request.WhatsappNumber) && !System.Text.RegularExpressions.Regex.IsMatch(request.WhatsappNumber,"^[1-9]\\d{7,14}$")) return Results.ValidationProblem(new Dictionary<string,string[]> { ["whatsappNumber"]=["Informe somente dígitos do número internacional."] }); await repo.SaveSettingsAsync(new CatalogSettings(request.WhatsappNumber),ct); return Results.NoContent(); });
     }
 
+    private static IResult ThemeProblem(string message) =>
+        Results.ValidationProblem(new Dictionary<string, string[]> { ["themes"] = [message] });
+
+    private static async Task<IResult> SaveTheme(ThemeRequest request, Guid id, ICatalogWriteRepository repo, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Trim().Length > 120)
+            return ThemeProblem("Informe um nome de tema com até 120 caracteres.");
+        try
+        {
+            var saved = await repo.SaveThemeAsync(new CatalogTheme(id, request.Name.Trim(), request.Active), ct);
+            return Results.Ok(new { id = saved.Id, name = saved.Name, active = saved.IsActive });
+        }
+        catch (CatalogThemeValidationException ex) { return ThemeProblem(ex.Message); }
+    }
+
     private static async Task<IResult> Reorder(CatalogOrderRequest request, bool suppliers, ICatalogWriteRepository repo, CancellationToken ct)
     {
         if (request.Ids is null || request.Expected is null || request.Ids.Length == 0 || request.Ids.Any(id => id == Guid.Empty) || request.Ids.Distinct().Count() != request.Ids.Length)
@@ -149,11 +175,19 @@ public static class AdminCatalogEndpoints
         var rootSlug = ProductSlug.From(string.IsNullOrWhiteSpace(r.Slug) ? r.Name : r.Slug);
         if (string.IsNullOrWhiteSpace(rootSlug))
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["product"] = ["Informe um título que permita criar a URL do produto."] });
-        var usedSlugs = (await catalog.GetAllShopProductsAsync(ct)).Where(product => product.Id != id).Select(product => product.Slug).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var allProducts = await catalog.GetAllShopProductsAsync(ct);
+        var themeIds = r.ThemeIds ?? allProducts.FirstOrDefault(p => p.Id == id)?.ThemeIds.ToArray() ?? [];
+        if (themeIds.Length > 50 || themeIds.Any(themeId => themeId == Guid.Empty))
+            return ThemeProblem("Selecione até 50 temas válidos.");
+        var usedSlugs = allProducts.Where(product => product.Id != id).Select(product => product.Slug).ToHashSet(StringComparer.OrdinalIgnoreCase);
         var slug = rootSlug;
         for (var suffix = 2; usedSlugs.Contains(slug); suffix++) slug = $"{rootSlug}-{suffix}";
-        var product = await repo.SaveShopProductAsync(new ShopProduct(id, r.TypeId, r.Name.Trim(), slug, r.Description.Trim(), r.FullDescription?.Trim(), r.PriceMode, r.Price, r.Demo, r.Featured, r.Characteristics ?? [], r.Personalization ?? [], images.Select((url, index) => new ProductImage(Guid.NewGuid(), url, index)).ToArray(), r.Status, r.Order), ct);
-        return Results.Ok(new { id = product.Id });
+        try
+        {
+            var product = await repo.SaveShopProductAsync(new ShopProduct(id, r.TypeId, r.Name.Trim(), slug, r.Description.Trim(), r.FullDescription?.Trim(), r.PriceMode, r.Price, r.Demo, r.Featured, r.Characteristics ?? [], r.Personalization ?? [], images.Select((url, index) => new ProductImage(Guid.NewGuid(), url, index)).ToArray(), r.Status, r.Order) { ThemeIds = themeIds.Distinct().ToArray() }, ct);
+            return Results.Ok(new { id = product.Id });
+        }
+        catch (CatalogThemeValidationException ex) { return ThemeProblem(ex.Message); }
     }
 
     private static async Task<IResult> SaveAffiliate(AffiliateRequest r, Guid id, ICatalogWriteRepository repo, CancellationToken ct)
@@ -182,8 +216,10 @@ public static class AdminCatalogEndpoints
 }
 
 public sealed record TypeRequest(Guid Id, string Name, string Scope, bool Active);
-public sealed record ProductRequest(Guid TypeId,string Name,string? Slug,string Description,string? FullDescription,string PriceMode,decimal? Price,bool Demo,bool Featured,string[]? Characteristics,string[]? Personalization,string[]? Images,string Status,int Order);
+public sealed record ProductRequest(Guid TypeId,string Name,string? Slug,string Description,string? FullDescription,string PriceMode,decimal? Price,bool Demo,bool Featured,string[]? Characteristics,string[]? Personalization,string[]? Images,string Status,int Order,Guid[]? ThemeIds = null);
 public sealed record AffiliateRequest(Guid TypeId,string Name,string Description,string Platform,string? Image,string? Url,string? Seller,bool DemoListing,bool Featured,string Status,int Order,string[]? Images = null);
 public sealed record SettingsRequest(string WhatsappNumber);
 
 public sealed record CatalogOrderRequest(Guid[]? Ids, CatalogOrderEntry[]? Expected);
+
+public sealed record ThemeRequest(string Name, bool Active);

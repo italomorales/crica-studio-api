@@ -7,6 +7,29 @@ namespace CricaStudio.Infrastructure.Persistence;
 
 public sealed class PostgresCatalogReadRepository(string connectionString) : ICatalogReadRepository
 {
+    public async Task<IReadOnlyList<CatalogTheme>> GetThemesAsync(bool onlyPublished, CancellationToken cancellationToken)
+    {
+        var sql = $"""
+            SELECT t.id, t.name, t.is_active, count(p.id)::int
+            FROM cricastudio.catalog_themes t
+            LEFT JOIN cricastudio.shop_product_themes pt ON pt.theme_id = t.id
+            LEFT JOIN cricastudio.shop_products p ON p.id = pt.product_id
+                {(onlyPublished ? "AND p.status = 'published'" : string.Empty)}
+            {(onlyPublished ? "WHERE t.is_active" : string.Empty)}
+            GROUP BY t.id
+            {(onlyPublished ? "HAVING count(p.id) > 0" : string.Empty)}
+            ORDER BY t.name, t.id;
+            """;
+        var themes = new List<CatalogTheme>();
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            themes.Add(new CatalogTheme(reader.GetGuid(0), reader.GetString(1), reader.GetBoolean(2), reader.GetInt32(3)));
+        return themes;
+    }
+
     public async Task<IReadOnlyList<CatalogType>> GetPublishedTypesAsync(CancellationToken cancellationToken)
     {
         return await GetTypesAsync(onlyActive: true, cancellationToken);
@@ -41,15 +64,20 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
         return await GetShopProductsAsync(onlyPublished: true, cancellationToken);
     }
 
-    public async Task<CatalogPage<ShopProduct>> GetPublishedShopProductPageAsync(int page, int pageSize, string? query, Guid? typeId, bool featuredOnly, CancellationToken cancellationToken)
+    public async Task<CatalogPage<ShopProduct>> GetPublishedShopProductPageAsync(int page, int pageSize, string? query, Guid? typeId, bool featuredOnly, CancellationToken cancellationToken, IReadOnlyList<Guid>? themeIds = null)
     {
         const string filters = """
             p.status = 'published'
             AND (@typeId IS NULL OR p.type_id = @typeId)
+            AND (cardinality(@themeIds) = 0 OR EXISTS (
+                SELECT 1 FROM cricastudio.shop_product_themes pt
+                JOIN cricastudio.catalog_themes t ON t.id = pt.theme_id AND t.is_active
+                WHERE pt.product_id = p.id AND pt.theme_id = ANY(@themeIds)
+            ))
             AND (@featuredOnly = FALSE OR p.is_featured)
             AND (@query = '' OR translate(lower(p.name || ' ' || p.description), 'áàãâäéèêëíìîïóòõôöúùûüç', 'aaaaaeeeeiiiiooooouuuuc') LIKE '%' || @query || '%')
             """;
-        var total = await CountAsync("cricastudio.shop_products p", filters, query, typeId, null, featuredOnly, cancellationToken);
+        var total = await CountAsync("cricastudio.shop_products p", filters, query, typeId, null, featuredOnly, cancellationToken, themeIds);
         var sql = $"""
             WITH selected AS (
                 SELECT p.id, p.type_id, p.name, p.slug, p.description, p.full_description, p.price_mode, p.price,
@@ -62,7 +90,10 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
             )
             SELECT p.id, p.type_id, p.name, p.slug, p.description, p.full_description, p.price_mode, p.price,
                    p.is_demo, p.is_featured, p.characteristics, p.personalization, p.status, p.sort_order,
-                   i.id, i.image_url, i.sort_order
+                   i.id, i.image_url, i.sort_order,
+                   ARRAY(SELECT pt.theme_id FROM cricastudio.shop_product_themes pt
+                         JOIN cricastudio.catalog_themes t ON t.id = pt.theme_id AND t.is_active
+                         WHERE pt.product_id = p.id ORDER BY pt.theme_id)
             FROM selected p
             LEFT JOIN cricastudio.shop_product_images i ON i.product_id = p.id
             ORDER BY p.sort_order, p.created_at, p.id, i.sort_order, i.created_at;
@@ -72,7 +103,7 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
-        AddPageParameters(command, page, pageSize, query, typeId, null, featuredOnly);
+        AddPageParameters(command, page, pageSize, query, typeId, null, featuredOnly, themeIds);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
@@ -86,7 +117,7 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
                     reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetString(6),
                     reader.IsDBNull(7) ? null : reader.GetDecimal(7), reader.GetBoolean(8), reader.GetBoolean(9),
                     DeserializeStrings(reader.GetString(10)), DeserializeStrings(reader.GetString(11)), images,
-                    reader.GetString(12), reader.GetInt32(13)));
+                    reader.GetString(12), reader.GetInt32(13)) { ThemeIds = reader.GetFieldValue<Guid[]>(17) });
             }
             if (!reader.IsDBNull(14)) images.Add(new ProductImage(reader.GetGuid(14), reader.GetString(15), reader.GetInt32(16)));
         }
@@ -109,7 +140,10 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
         var sql = $"""
             SELECT p.id, p.type_id, p.name, p.slug, p.description, p.full_description, p.price_mode, p.price,
                     p.is_demo, p.is_featured, p.characteristics::text, p.personalization::text, p.status, p.sort_order,
-                   i.id, i.image_url, i.sort_order
+                   i.id, i.image_url, i.sort_order,
+                   ARRAY(SELECT pt.theme_id FROM cricastudio.shop_product_themes pt
+                         JOIN cricastudio.catalog_themes t ON t.id = pt.theme_id
+                         WHERE pt.product_id = p.id {(onlyPublished ? "AND t.is_active" : string.Empty)} ORDER BY pt.theme_id)
             FROM cricastudio.shop_products p
             LEFT JOIN cricastudio.shop_product_images i ON i.product_id = p.id
             {(onlyPublished ? "WHERE p.status = 'published'" : string.Empty)}
@@ -134,7 +168,7 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
                     reader.IsDBNull(5) ? null : reader.GetString(5), reader.GetString(6),
                     reader.IsDBNull(7) ? null : reader.GetDecimal(7), reader.GetBoolean(8), reader.GetBoolean(9),
                     DeserializeStrings(reader.GetString(10)), DeserializeStrings(reader.GetString(11)), images,
-                    reader.GetString(12), reader.GetInt32(13)));
+                    reader.GetString(12), reader.GetInt32(13)) { ThemeIds = reader.GetFieldValue<Guid[]>(17) });
             }
 
             if (!reader.IsDBNull(14))
@@ -222,17 +256,18 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
     private static IReadOnlyList<string> DeserializeStrings(string value) =>
         JsonSerializer.Deserialize<string[]>(value) ?? [];
 
-    private async Task<int> CountAsync(string table, string filters, string? query, Guid? typeId, string? platform, bool featuredOnly, CancellationToken cancellationToken)
+    private async Task<int> CountAsync(string table, string filters, string? query, Guid? typeId, string? platform, bool featuredOnly, CancellationToken cancellationToken, IReadOnlyList<Guid>? themeIds = null)
     {
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand($"SELECT count(*) FROM {table} WHERE {filters};", connection);
-        AddPageParameters(command, 1, 1, query, typeId, platform, featuredOnly);
+        AddPageParameters(command, 1, 1, query, typeId, platform, featuredOnly, themeIds);
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
     }
 
-    private static void AddPageParameters(NpgsqlCommand command, int page, int pageSize, string? query, Guid? typeId, string? platform, bool featuredOnly)
+    private static void AddPageParameters(NpgsqlCommand command, int page, int pageSize, string? query, Guid? typeId, string? platform, bool featuredOnly, IReadOnlyList<Guid>? themeIds = null)
     {
+        command.Parameters.Add("themeIds", NpgsqlDbType.Array | NpgsqlDbType.Uuid).Value = themeIds?.Distinct().ToArray() ?? [];
         command.Parameters.Add("query", NpgsqlDbType.Text).Value = query ?? string.Empty;
         command.Parameters.Add("typeId", NpgsqlDbType.Uuid).Value = (object?)typeId ?? DBNull.Value;
         command.Parameters.Add("platform", NpgsqlDbType.Text).Value = (object?)platform ?? DBNull.Value;

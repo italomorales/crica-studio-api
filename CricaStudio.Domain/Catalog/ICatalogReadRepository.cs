@@ -2,10 +2,11 @@ namespace CricaStudio.Domain.Catalog;
 
 public interface ICatalogReadRepository
 {
+    Task<IReadOnlyList<CatalogTheme>> GetThemesAsync(bool onlyPublished, CancellationToken cancellationToken);
     Task<IReadOnlyList<CatalogType>> GetPublishedTypesAsync(CancellationToken cancellationToken);
     Task<IReadOnlyList<CatalogType>> GetAllTypesAsync(CancellationToken cancellationToken);
     Task<IReadOnlyList<ShopProduct>> GetPublishedShopProductsAsync(CancellationToken cancellationToken);
-    Task<CatalogPage<ShopProduct>> GetPublishedShopProductPageAsync(int page, int pageSize, string? query, Guid? typeId, bool featuredOnly, CancellationToken cancellationToken);
+    Task<CatalogPage<ShopProduct>> GetPublishedShopProductPageAsync(int page, int pageSize, string? query, Guid? typeId, bool featuredOnly, CancellationToken cancellationToken, IReadOnlyList<Guid>? themeIds = null);
     Task<ShopProduct?> GetPublishedShopProductBySlugAsync(string slug, CancellationToken cancellationToken);
     Task<IReadOnlyList<ShopProduct>> GetAllShopProductsAsync(CancellationToken cancellationToken);
     Task<IReadOnlyList<AffiliateProduct>> GetPublishedAffiliateProductsAsync(CancellationToken cancellationToken);

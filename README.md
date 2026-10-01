@@ -1,5 +1,33 @@
 # Crica Studio API
 
+## Temas dos produtos
+
+Aplique `sql/009_add_product_themes.sql` após as migrações existentes e antes de
+publicar esta versão da API. O script adiciona temas e a associação muitos-para-muitos,
+com índice por tema, chave única por vínculo e exclusão de tema em uso bloqueada.
+Produtos existentes continuam sem temas; nenhuma alteração de conteúdo é executada.
+Publique primeiro a API e depois o frontend. Em um retorno à versão anterior da
+aplicação, preserve as tabelas para não perder os vínculos.
+
+- `GET /api/catalog/themes`: temas ativos com produtos publicados e suas quantidades.
+- `GET /api/catalog/products?...&themes=UUID1,UUID2`: OR entre os temas e AND com tipo/busca.
+- `/api/admin/catalog/themes`: GET/POST e PUT/DELETE por ID, exigindo autenticação.
+- O produto recebe `themeIds` como array, inclusive vazio para remover todas as associações.
+  Requisições antigas que omitam o campo preservam os vínculos existentes.
+- Até 50 temas por produto/consulta; nome de tema obrigatório, com até 120 caracteres.
+- Salvar produto, fotos e vínculos é uma transação. Temas inexistentes ou novas
+  associações a temas inativos são rejeitados sem salvar parcialmente o produto.
+
+Os testes de integração usam `CRICA_THEMES_TEST_DATABASE` com um PostgreSQL
+descartável cujo banco se chame exatamente `crica_themes_test`. Esse teste recria
+o schema desse banco; não configure a variável com um banco de uso real.
+Sem essa variável, apenas o teste de integração é ignorado.
+
+```powershell
+$env:CRICA_THEMES_TEST_DATABASE = 'Host=127.0.0.1;Port=55439;Database=crica_themes_test;Username=postgres;Password=senha-do-banco-descartavel'
+dotnet test Tests/CricaStudio.Application.Tests/CricaStudio.Application.Tests.csproj
+```
+
 API em ASP.NET Core (.NET 10), organizada em Api, Application, Domain e Infrastructure.
 
 ## Executar localmente

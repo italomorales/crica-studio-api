@@ -1,4 +1,5 @@
 using CricaStudio.Application.Catalog;
+using CricaStudio.Domain.Catalog;
 
 namespace CricaStudio.Api.Catalog;
 
@@ -7,6 +8,9 @@ public static class CatalogEndpoints
     public static void MapCatalogEndpoints(this WebApplication app)
     {
         var group = app.MapGroup("/api/catalog").WithTags("Catalog");
+
+        group.MapGet("/themes", async (CatalogReadService catalog, CancellationToken ct) =>
+            Results.Ok((await catalog.GetThemesAsync(true, ct)).Select(t => new { id = t.Id, name = t.Name, active = t.IsActive, productCount = t.ProductCount })));
 
         group.MapGet("/types", async (CatalogReadService catalog, CancellationToken cancellationToken) =>
         {
@@ -20,17 +24,20 @@ public static class CatalogEndpoints
             }));
         });
 
-        group.MapGet("/products", async (int page, int pageSize, string? query, Guid? typeId, bool featured, CatalogReadService catalog, CancellationToken cancellationToken) =>
+        group.MapGet("/products", async (int page, int pageSize, string? query, Guid? typeId, bool featured, string? themes, CatalogReadService catalog, CancellationToken cancellationToken) =>
         {
+            if (!TryParseThemeIds(themes, out var themeIds))
+                return Results.ValidationProblem(new Dictionary<string, string[]> { ["themes"] = ["Selecione até 50 temas válidos."] });
             page = Math.Max(page, 1);
             pageSize = Math.Clamp(pageSize, 1, 24);
-            var result = await catalog.GetPublishedShopProductPageAsync(page, pageSize, query, typeId, featured, cancellationToken);
+            var result = await catalog.GetPublishedShopProductPageAsync(page, pageSize, query, typeId, featured, cancellationToken, themeIds);
             return Results.Ok(new
             {
                 items = result.Items.Select(product => new
                 {
                     id = product.Id,
                     typeId = product.TypeId,
+                    themeIds = product.ThemeIds,
                     name = product.Name,
                     slug = product.Slug,
                     description = product.Description,
@@ -56,6 +63,7 @@ public static class CatalogEndpoints
             {
                 id = product.Id,
                 typeId = product.TypeId,
+                    themeIds = product.ThemeIds,
                 name = product.Name,
                 slug = product.Slug,
                 description = product.Description,
@@ -102,5 +110,15 @@ public static class CatalogEndpoints
             var settings = await catalog.GetSettingsAsync(cancellationToken);
             return Results.Ok(new { whatsappNumber = settings.WhatsappNumber });
         });
+    }
+
+    internal static bool TryParseThemeIds(string? value, out Guid[] ids)
+    {
+        ids = [];
+        if (string.IsNullOrWhiteSpace(value)) return true;
+        var parts = value.Split(',', StringSplitOptions.TrimEntries);
+        if (parts.Length > 50 || parts.Any(part => !Guid.TryParse(part, out var id) || id == Guid.Empty)) return false;
+        ids = parts.Select(Guid.Parse).Distinct().ToArray();
+        return true;
     }
 }
