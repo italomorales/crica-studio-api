@@ -163,7 +163,7 @@ public static class AdminCatalogEndpoints
         var images = r.Images ?? [];
         if (r.TypeId == Guid.Empty || string.IsNullOrWhiteSpace(r.Name) || string.IsNullOrWhiteSpace(r.Description) || r.Order < 0 ||
             !new[] { "draft", "published", "inactive" }.Contains(r.Status) || !new[] { "consult", "fixed", "from" }.Contains(r.PriceMode) ||
-            (r.PriceMode != "consult" && (!r.Price.HasValue || r.Price <= 0)) || images.Length > 5 || images.Any(url => !IsAllowedImageUrl(url)) ||
+            (r.PriceMode != "consult" && (!r.Price.HasValue || r.Price <= 0)) || images.Length > 6 || images.Any(url => !IsAllowedImageUrl(url)) ||
             (r.Status == "published" && images.Length == 0))
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["product"] = ["Confira os campos obrigatórios, a foto principal e os endereços das imagens."] });
 
