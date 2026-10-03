@@ -92,6 +92,7 @@ public static class CatalogEndpoints
                     name = product.Name,
                     description = product.Description,
                     platform = product.Platform,
+                    international = product.IsInternational,
                     image = product.ImageUrl,
                     images = product.Images,
                     url = product.AffiliateUrl,

@@ -32,7 +32,7 @@ public sealed class ThemeFilterTests
             await connection.OpenAsync();
             await using (var reset = new NpgsqlCommand("DROP SCHEMA IF EXISTS cricastudio CASCADE", connection))
                 await reset.ExecuteNonQueryAsync();
-            foreach (var file in new[] { "002_create_catalog.sql", "007_add_affiliate_product_images.sql", "008_add_shop_product_slug.sql", "009_add_product_themes.sql" })
+            foreach (var file in new[] { "002_create_catalog.sql", "006_add_affiliate_product_featured.sql", "007_add_affiliate_product_images.sql", "008_add_shop_product_slug.sql", "009_add_product_themes.sql", "010_add_affiliate_product_international.sql" })
             {
                 await using var command = new NpgsqlCommand(await File.ReadAllTextAsync(Path.Combine(root, "sql", file)), connection);
                 await command.ExecuteNonQueryAsync();
@@ -41,6 +41,12 @@ public sealed class ThemeFilterTests
         var read = new PostgresCatalogReadRepository(connectionString);
         var write = new PostgresCatalogWriteRepository(connectionString);
         var ct = CancellationToken.None;
+        var supplierType = await write.SaveTypeAsync(new CatalogType(Guid.Empty, "Materiais", "suppliers", true), ct);
+        var affiliate = await write.SaveAffiliateProductAsync(new AffiliateProduct(Guid.Empty, supplierType.Id, "Material importado", "Descrição", "Shopee", null, null, null, true, true, "published", 0) { IsInternational = true }, ct);
+        Assert.True((await read.GetAllAffiliateProductsAsync(ct)).Single(p => p.Id == affiliate.Id).IsInternational);
+        Assert.True((await read.GetPublishedAffiliateProductPageAsync(1, 12, null, null, true, ct)).Items.Single(p => p.Id == affiliate.Id).IsInternational);
+        await write.SaveAffiliateProductAsync(affiliate with { IsInternational = false }, ct);
+        Assert.False((await read.GetPublishedAffiliateProductsAsync(ct)).Single(p => p.Id == affiliate.Id).IsInternational);
         var mugs = await write.SaveTypeAsync(new CatalogType(Guid.Empty, "Canecas", "shop", true), ct);
         var buttons = await write.SaveTypeAsync(new CatalogType(Guid.Empty, "Bottons", "shop", true), ct);
         var christmas = await write.SaveThemeAsync(new CatalogTheme(Guid.Empty, "Natal", true), ct);

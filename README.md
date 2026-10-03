@@ -1,5 +1,13 @@
 # Crica Studio API
 
+## Indicações internacionais
+
+Aplique `sql/010_add_affiliate_product_international.sql` antes de publicar a API,
+e publique a API antes do frontend. O campo booleano `international` é recebido no
+cadastro e devolvido nas consultas administrativas e públicas de indicações.
+Os cadastros existentes recebem `false`; marque cada produto internacional no
+editor de Fornecedores para exibir a tag na vitrine.
+
 ## Temas dos produtos
 
 Aplique `sql/009_add_product_themes.sql` após as migrações existentes e antes de

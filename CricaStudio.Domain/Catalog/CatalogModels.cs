@@ -44,6 +44,7 @@ public sealed record AffiliateProduct(
     int SortOrder)
 {
     public IReadOnlyList<string> Images { get; init; } = [];
+    public bool IsInternational { get; init; }
 }
 
 public sealed record CatalogSettings(string WhatsappNumber);
