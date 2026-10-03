@@ -78,11 +78,13 @@ public static class CatalogEndpoints
             });
         });
 
-        group.MapGet("/affiliates", async (int page, int pageSize, string? query, string? platform, bool featured, CatalogReadService catalog, CancellationToken cancellationToken) =>
+        group.MapGet("/affiliates", async (int page, int pageSize, string? query, string? platform, bool featured, string? types, CatalogReadService catalog, CancellationToken cancellationToken) =>
         {
+            if (!TryParseThemeIds(types, out var typeIds))
+                return Results.ValidationProblem(new Dictionary<string, string[]> { ["types"] = ["Selecione até 50 tipos válidos."] });
             page = Math.Max(page, 1);
             pageSize = Math.Clamp(pageSize, 1, 24);
-            var result = await catalog.GetPublishedAffiliateProductPageAsync(page, pageSize, query, platform, featured, cancellationToken);
+            var result = await catalog.GetPublishedAffiliateProductPageAsync(page, pageSize, query, platform, featured, cancellationToken, typeIds);
             return Results.Ok(new
             {
                 items = result.Items.Select(product => new

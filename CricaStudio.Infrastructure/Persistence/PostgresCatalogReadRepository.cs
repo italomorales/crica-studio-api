@@ -182,15 +182,16 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
         return await GetAffiliateProductsAsync(onlyPublished: true, cancellationToken);
     }
 
-    public async Task<CatalogPage<AffiliateProduct>> GetPublishedAffiliateProductPageAsync(int page, int pageSize, string? query, string? platform, bool featuredOnly, CancellationToken cancellationToken)
+    public async Task<CatalogPage<AffiliateProduct>> GetPublishedAffiliateProductPageAsync(int page, int pageSize, string? query, string? platform, bool featuredOnly, CancellationToken cancellationToken, IReadOnlyList<Guid>? typeIds = null)
     {
         const string filters = """
             p.status = 'published'
             AND (@platform IS NULL OR p.platform = @platform)
+            AND (cardinality(@typeIds) = 0 OR p.type_id = ANY(@typeIds))
             AND (@featuredOnly = FALSE OR p.is_featured)
             AND (@query = '' OR translate(lower(p.name || ' ' || p.description), 'áàãâäéèêëíìîïóòõôöúùûüç', 'aaaaaeeeeiiiiooooouuuuc') LIKE '%' || @query || '%')
             """;
-        var total = await CountAsync("cricastudio.affiliate_products p", filters, query, null, platform, featuredOnly, cancellationToken);
+        var total = await CountAsync("cricastudio.affiliate_products p", filters, query, null, platform, featuredOnly, cancellationToken, typeIds: typeIds);
         var sql = $"""
             SELECT p.id, p.type_id, p.name, p.description, p.platform, p.image_url, p.affiliate_url, p.seller,
                    p.is_demo_listing, p.is_featured, p.status, p.sort_order, p.images::text, p.is_international
@@ -203,7 +204,7 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
-        AddPageParameters(command, page, pageSize, query, null, platform, featuredOnly);
+        AddPageParameters(command, page, pageSize, query, null, platform, featuredOnly, typeIds: typeIds);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
             products.Add(new AffiliateProduct(
@@ -256,17 +257,18 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
     private static IReadOnlyList<string> DeserializeStrings(string value) =>
         JsonSerializer.Deserialize<string[]>(value) ?? [];
 
-    private async Task<int> CountAsync(string table, string filters, string? query, Guid? typeId, string? platform, bool featuredOnly, CancellationToken cancellationToken, IReadOnlyList<Guid>? themeIds = null)
+    private async Task<int> CountAsync(string table, string filters, string? query, Guid? typeId, string? platform, bool featuredOnly, CancellationToken cancellationToken, IReadOnlyList<Guid>? themeIds = null, IReadOnlyList<Guid>? typeIds = null)
     {
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand($"SELECT count(*) FROM {table} WHERE {filters};", connection);
-        AddPageParameters(command, 1, 1, query, typeId, platform, featuredOnly, themeIds);
+        AddPageParameters(command, 1, 1, query, typeId, platform, featuredOnly, themeIds, typeIds);
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
     }
 
-    private static void AddPageParameters(NpgsqlCommand command, int page, int pageSize, string? query, Guid? typeId, string? platform, bool featuredOnly, IReadOnlyList<Guid>? themeIds = null)
+    private static void AddPageParameters(NpgsqlCommand command, int page, int pageSize, string? query, Guid? typeId, string? platform, bool featuredOnly, IReadOnlyList<Guid>? themeIds = null, IReadOnlyList<Guid>? typeIds = null)
     {
+        command.Parameters.Add("typeIds", NpgsqlDbType.Array | NpgsqlDbType.Uuid).Value = typeIds?.Distinct().ToArray() ?? [];
         command.Parameters.Add("themeIds", NpgsqlDbType.Array | NpgsqlDbType.Uuid).Value = themeIds?.Distinct().ToArray() ?? [];
         command.Parameters.Add("query", NpgsqlDbType.Text).Value = query ?? string.Empty;
         command.Parameters.Add("typeId", NpgsqlDbType.Uuid).Value = (object?)typeId ?? DBNull.Value;

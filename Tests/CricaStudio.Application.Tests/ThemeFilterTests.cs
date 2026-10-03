@@ -47,6 +47,17 @@ public sealed class ThemeFilterTests
         Assert.True((await read.GetPublishedAffiliateProductPageAsync(1, 12, null, null, true, ct)).Items.Single(p => p.Id == affiliate.Id).IsInternational);
         await write.SaveAffiliateProductAsync(affiliate with { IsInternational = false }, ct);
         Assert.False((await read.GetPublishedAffiliateProductsAsync(ct)).Single(p => p.Id == affiliate.Id).IsInternational);
+        var otherType = await write.SaveTypeAsync(new CatalogType(Guid.Empty, "Equipamentos", "suppliers", true), ct);
+        var otherAffiliate = await write.SaveAffiliateProductAsync(affiliate with { Id = Guid.Empty, TypeId = otherType.Id, Platform = "Mercado Livre" }, ct);
+        var filtered = await read.GetPublishedAffiliateProductPageAsync(1, 1, "material", "Shopee", false, ct, [supplierType.Id, otherType.Id]);
+        Assert.Equal(1, filtered.Total);
+        Assert.Equal(affiliate.Id, filtered.Items.Single().Id);
+        Assert.Equal(0, (await read.GetPublishedAffiliateProductPageAsync(1, 12, null, "Shopee", false, ct, [otherType.Id])).Total);
+        var firstAffiliate = await read.GetPublishedAffiliateProductPageAsync(1, 1, null, null, false, ct, [supplierType.Id, otherType.Id]);
+        var secondAffiliate = await read.GetPublishedAffiliateProductPageAsync(2, 1, null, null, false, ct, [supplierType.Id, otherType.Id]);
+        Assert.Equal(2, firstAffiliate.Total);
+        Assert.Equal(2, secondAffiliate.Total);
+        Assert.NotEqual(firstAffiliate.Items.Single().Id, secondAffiliate.Items.Single().Id);
         var mugs = await write.SaveTypeAsync(new CatalogType(Guid.Empty, "Canecas", "shop", true), ct);
         var buttons = await write.SaveTypeAsync(new CatalogType(Guid.Empty, "Bottons", "shop", true), ct);
         var christmas = await write.SaveThemeAsync(new CatalogTheme(Guid.Empty, "Natal", true), ct);

@@ -10,7 +10,7 @@ public interface ICatalogReadRepository
     Task<ShopProduct?> GetPublishedShopProductBySlugAsync(string slug, CancellationToken cancellationToken);
     Task<IReadOnlyList<ShopProduct>> GetAllShopProductsAsync(CancellationToken cancellationToken);
     Task<IReadOnlyList<AffiliateProduct>> GetPublishedAffiliateProductsAsync(CancellationToken cancellationToken);
-    Task<CatalogPage<AffiliateProduct>> GetPublishedAffiliateProductPageAsync(int page, int pageSize, string? query, string? platform, bool featuredOnly, CancellationToken cancellationToken);
+    Task<CatalogPage<AffiliateProduct>> GetPublishedAffiliateProductPageAsync(int page, int pageSize, string? query, string? platform, bool featuredOnly, CancellationToken cancellationToken, IReadOnlyList<Guid>? typeIds = null);
     Task<IReadOnlyList<AffiliateProduct>> GetAllAffiliateProductsAsync(CancellationToken cancellationToken);
     Task<CatalogSettings> GetSettingsAsync(CancellationToken cancellationToken);
 }
