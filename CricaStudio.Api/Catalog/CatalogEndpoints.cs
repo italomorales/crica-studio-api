@@ -93,7 +93,7 @@ public static class CatalogEndpoints
                     typeId = product.TypeId,
                     name = product.Name,
                     description = product.Description,
-                    platform = product.Platform,
+                    platform = product.Platform, platformId = product.PlatformId,
                     international = product.IsInternational,
                     image = product.ImageUrl,
                     images = product.Images,

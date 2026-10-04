@@ -32,7 +32,7 @@ public sealed class ThemeFilterTests
             await connection.OpenAsync();
             await using (var reset = new NpgsqlCommand("DROP SCHEMA IF EXISTS cricastudio CASCADE", connection))
                 await reset.ExecuteNonQueryAsync();
-            foreach (var file in new[] { "002_create_catalog.sql", "006_add_affiliate_product_featured.sql", "007_add_affiliate_product_images.sql", "008_add_shop_product_slug.sql", "009_add_product_themes.sql", "010_add_affiliate_product_international.sql" })
+            foreach (var file in new[] { "002_create_catalog.sql", "006_add_affiliate_product_featured.sql", "007_add_affiliate_product_images.sql", "008_add_shop_product_slug.sql", "009_add_product_themes.sql", "010_add_affiliate_product_international.sql", "011_add_marketplaces_and_storefronts.sql", "012_unify_platforms.sql" })
             {
                 await using var command = new NpgsqlCommand(await File.ReadAllTextAsync(Path.Combine(root, "sql", file)), connection);
                 await command.ExecuteNonQueryAsync();

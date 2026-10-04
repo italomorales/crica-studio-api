@@ -63,6 +63,7 @@ builder.Services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
 builder.Services.AddSingleton<IAccessTokenService>(new JwtTokenService(jwtSettings));
 builder.Services.AddScoped<LoginUseCase>();
 builder.Services.AddScoped<CatalogReadService>();
+builder.Services.AddScoped<IPlatformRepository>(_ => new PostgresPlatformRepository(databaseConnectionString ?? throw new InvalidOperationException("Banco não configurado.")));
 builder.Services.AddHealthChecks();
 
 var app = builder.Build();
@@ -95,6 +96,7 @@ app.MapGet("/api/ping", () => Results.Ok(new { message = "API online", timestamp
 app.MapAuthEndpoints();
 app.MapCatalogEndpoints();
 app.MapAdminCatalogEndpoints();
+app.MapPlatformEndpoints();
 
 app.Run();
 

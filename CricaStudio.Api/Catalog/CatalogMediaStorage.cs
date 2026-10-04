@@ -37,7 +37,7 @@ public sealed class S3CatalogMediaStorage(CatalogMediaOptions options) : ICatalo
     public async Task<string> UploadAsync(string category, IFormFile file, CancellationToken cancellationToken)
     {
         options.Validate();
-        if (category is not ("products" or "affiliates"))
+        if (category is not ("products" or "affiliates" or "platforms"))
             throw new CatalogMediaValidationException("Destino de mídia inválido.");
         if (file.Length is <= 0 or > MaxFileSize)
             throw new CatalogMediaValidationException("Escolha uma imagem de até 5 MB.");

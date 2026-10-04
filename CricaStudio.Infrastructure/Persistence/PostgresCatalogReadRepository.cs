@@ -194,7 +194,7 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
         var total = await CountAsync("cricastudio.affiliate_products p", filters, query, null, platform, featuredOnly, cancellationToken, typeIds: typeIds);
         var sql = $"""
             SELECT p.id, p.type_id, p.name, p.description, p.platform, p.image_url, p.affiliate_url, p.seller,
-                   p.is_demo_listing, p.is_featured, p.status, p.sort_order, p.images::text, p.is_international
+                   p.is_demo_listing, p.is_featured, p.status, p.sort_order, p.images::text, p.is_international, p.platform_id
             FROM cricastudio.affiliate_products p
             WHERE {filters}
             ORDER BY p.sort_order, p.created_at, p.id
@@ -211,7 +211,7 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
                 reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3),
                 reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5),
                 reader.IsDBNull(6) ? null : reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7),
-                reader.GetBoolean(8), reader.GetBoolean(9), reader.GetString(10), reader.GetInt32(11)) { Images = DeserializeStrings(reader.GetString(12)), IsInternational = reader.GetBoolean(13) });
+                reader.GetBoolean(8), reader.GetBoolean(9), reader.GetString(10), reader.GetInt32(11)) { Images = DeserializeStrings(reader.GetString(12)), IsInternational = reader.GetBoolean(13), PlatformId = reader.IsDBNull(14) ? null : reader.GetGuid(14) });
         return new CatalogPage<AffiliateProduct>(products, total);
     }
 
@@ -224,7 +224,7 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
     {
         var sql = $"""
             SELECT id, type_id, name, description, platform, image_url, affiliate_url, seller,
-                   is_demo_listing, is_featured, status, sort_order, images::text, is_international
+                   is_demo_listing, is_featured, status, sort_order, images::text, is_international, platform_id
             FROM cricastudio.affiliate_products
             {(onlyPublished ? "WHERE status = 'published'" : string.Empty)}
             ORDER BY sort_order, created_at;
@@ -240,7 +240,7 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
                 reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3),
                 reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5),
                 reader.IsDBNull(6) ? null : reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7),
-                reader.GetBoolean(8), reader.GetBoolean(9), reader.GetString(10), reader.GetInt32(11)) { Images = DeserializeStrings(reader.GetString(12)), IsInternational = reader.GetBoolean(13) });
+                reader.GetBoolean(8), reader.GetBoolean(9), reader.GetString(10), reader.GetInt32(11)) { Images = DeserializeStrings(reader.GetString(12)), IsInternational = reader.GetBoolean(13), PlatformId = reader.IsDBNull(14) ? null : reader.GetGuid(14) });
         return products;
     }
 

@@ -66,7 +66,7 @@ public static class AdminCatalogEndpoints
                 typeId = product.TypeId,
                 name = product.Name,
                 description = product.Description,
-                platform = product.Platform,
+                platform = product.Platform, platformId = product.PlatformId,
                 international = product.IsInternational,
                 image = product.ImageUrl,
                 images = product.Images,
@@ -131,8 +131,8 @@ public static class AdminCatalogEndpoints
         group.MapPost("/products", (ProductRequest request, CatalogReadService catalog, ICatalogWriteRepository repo, CancellationToken ct) => SaveProduct(request, Guid.Empty, catalog, repo, ct));
         group.MapPut("/products/{id:guid}", (Guid id, ProductRequest request, CatalogReadService catalog, ICatalogWriteRepository repo, CancellationToken ct) => SaveProduct(request, id, catalog, repo, ct));
         group.MapDelete("/products/{id:guid}", async (Guid id, ICatalogWriteRepository repo, CancellationToken ct) => { await repo.DeleteShopProductAsync(id,ct); return Results.NoContent(); });
-        group.MapPost("/affiliates", (AffiliateRequest request, ICatalogWriteRepository repo, CancellationToken ct) => SaveAffiliate(request, Guid.Empty, repo, ct));
-        group.MapPut("/affiliates/{id:guid}", (Guid id, AffiliateRequest request, ICatalogWriteRepository repo, CancellationToken ct) => SaveAffiliate(request, id, repo, ct));
+        group.MapPost("/affiliates", (AffiliateRequest request, ICatalogWriteRepository repo, IPlatformRepository platforms, CatalogReadService catalog, CancellationToken ct) => SaveAffiliate(request, Guid.Empty, repo, platforms, catalog, ct));
+        group.MapPut("/affiliates/{id:guid}", (Guid id, AffiliateRequest request, ICatalogWriteRepository repo, IPlatformRepository platforms, CatalogReadService catalog, CancellationToken ct) => SaveAffiliate(request, id, repo, platforms, catalog, ct));
         group.MapDelete("/affiliates/{id:guid}", async (Guid id, ICatalogWriteRepository repo, CancellationToken ct) => { await repo.DeleteAffiliateProductAsync(id,ct); return Results.NoContent(); });
         group.MapPut("/settings", async (SettingsRequest request, ICatalogWriteRepository repo, CancellationToken ct) => { if (!string.IsNullOrEmpty(request.WhatsappNumber) && !System.Text.RegularExpressions.Regex.IsMatch(request.WhatsappNumber,"^[1-9]\\d{7,14}$")) return Results.ValidationProblem(new Dictionary<string,string[]> { ["whatsappNumber"]=["Informe somente dígitos do número internacional."] }); await repo.SaveSettingsAsync(new CatalogSettings(request.WhatsappNumber),ct); return Results.NoContent(); });
     }
@@ -191,11 +191,11 @@ public static class AdminCatalogEndpoints
         catch (CatalogThemeValidationException ex) { return ThemeProblem(ex.Message); }
     }
 
-    private static async Task<IResult> SaveAffiliate(AffiliateRequest r, Guid id, ICatalogWriteRepository repo, CancellationToken ct)
+    private static async Task<IResult> SaveAffiliate(AffiliateRequest r, Guid id, ICatalogWriteRepository repo, IPlatformRepository platforms, CatalogReadService catalog, CancellationToken ct)
     {
         var images = r.Images ?? (string.IsNullOrWhiteSpace(r.Image) ? [] : new[] { r.Image });
         if (r.TypeId == Guid.Empty || string.IsNullOrWhiteSpace(r.Name) || string.IsNullOrWhiteSpace(r.Description) || r.Order < 0 ||
-            !new[] { "draft", "published", "inactive" }.Contains(r.Status) || !new[] { "Shopee", "Mercado Livre", "TikTok Shop", "AliExpress", "Outra" }.Contains(r.Platform) ||
+            !new[] { "draft", "published", "inactive" }.Contains(r.Status) || string.IsNullOrWhiteSpace(r.Platform) ||
             (images.Length > 5 || images.Any(image => !IsAllowedImageUrl(image))) || (r.Url is not null && !IsHttpsUrl(r.Url)) ||
             (r.Status == "published" && !r.DemoListing && (images.Length == 0 || string.IsNullOrWhiteSpace(r.Url))))
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["affiliate"] = ["Confira os campos obrigatórios, a foto principal e o link HTTPS da indicação."] });
@@ -205,7 +205,15 @@ public static class AdminCatalogEndpoints
         if (r.Featured && await repo.CountPublishedFeaturedAffiliateProductsAsync(id, ct) >= 3)
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["affiliate"] = ["Escolha no máximo três fornecedores em destaque."] });
 
-        var affiliate = await repo.SaveAffiliateProductAsync(new AffiliateProduct(id, r.TypeId, r.Name.Trim(), r.Description.Trim(), r.Platform, images.FirstOrDefault()?.Trim(), r.Url?.Trim(), r.Seller?.Trim(), r.DemoListing, r.Featured, r.Status, r.Order) { Images = images.Select(image => image.Trim()).ToArray(), IsInternational = r.International }, ct);
+        var registeredPlatforms = await platforms.GetAsync(null, null, false, false, ct);
+        var selectedPlatform = r.PlatformId.HasValue
+            ? registeredPlatforms.FirstOrDefault(p => p.Id == r.PlatformId)
+            : registeredPlatforms.OrderByDescending(p => p.Locale == "pt-BR" && p.CountryCode == "BR").FirstOrDefault(p => p.Name == r.Platform);
+        if (selectedPlatform is null)
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["platform"] = ["Selecione uma plataforma cadastrada."] });
+        if (!selectedPlatform.Active && !(await catalog.GetAllAffiliateProductsAsync(ct)).Any(p => p.Id == id && p.PlatformId == selectedPlatform.Id))
+            return Results.ValidationProblem(new Dictionary<string, string[]> { ["platform"] = ["Selecione uma plataforma ativa."] });
+        var affiliate = await repo.SaveAffiliateProductAsync(new AffiliateProduct(id, r.TypeId, r.Name.Trim(), r.Description.Trim(), selectedPlatform.Name, images.FirstOrDefault()?.Trim(), r.Url?.Trim(), r.Seller?.Trim(), r.DemoListing, r.Featured, r.Status, r.Order) { Images = images.Select(image => image.Trim()).ToArray(), IsInternational = r.International, PlatformId = selectedPlatform.Id }, ct);
         return Results.Ok(new { id = affiliate.Id });
     }
 
@@ -218,7 +226,7 @@ public static class AdminCatalogEndpoints
 
 public sealed record TypeRequest(Guid Id, string Name, string Scope, bool Active);
 public sealed record ProductRequest(Guid TypeId,string Name,string? Slug,string Description,string? FullDescription,string PriceMode,decimal? Price,bool Demo,bool Featured,string[]? Characteristics,string[]? Personalization,string[]? Images,string Status,int Order,Guid[]? ThemeIds = null);
-public sealed record AffiliateRequest(Guid TypeId,string Name,string Description,string Platform,string? Image,string? Url,string? Seller,bool DemoListing,bool Featured,string Status,int Order,string[]? Images = null,bool International = false);
+public sealed record AffiliateRequest(Guid TypeId,string Name,string Description,string Platform,string? Image,string? Url,string? Seller,bool DemoListing,bool Featured,string Status,int Order,string[]? Images = null,bool International = false,Guid? PlatformId = null);
 public sealed record SettingsRequest(string WhatsappNumber);
 
 public sealed record CatalogOrderRequest(Guid[]? Ids, CatalogOrderEntry[]? Expected);
