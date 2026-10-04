@@ -78,13 +78,15 @@ public static class CatalogEndpoints
             });
         });
 
-        group.MapGet("/affiliates", async (int page, int pageSize, string? query, string? platform, bool featured, string? types, CatalogReadService catalog, CancellationToken cancellationToken) =>
+        group.MapGet("/affiliates", async (int page, int pageSize, string? query, string? platform, bool featured, string? types, string? market, CatalogReadService catalog, CancellationToken cancellationToken) =>
         {
+            if (!TryMarketScope(market, out var international))
+                return Results.ValidationProblem(new Dictionary<string, string[]> { ["market"] = ["Selecione o catálogo brasileiro ou internacional."] });
             if (!TryParseThemeIds(types, out var typeIds))
                 return Results.ValidationProblem(new Dictionary<string, string[]> { ["types"] = ["Selecione até 50 tipos válidos."] });
             page = Math.Max(page, 1);
             pageSize = Math.Clamp(pageSize, 1, 24);
-            var result = await catalog.GetPublishedAffiliateProductPageAsync(page, pageSize, query, platform, featured, cancellationToken, typeIds);
+            var result = await catalog.GetPublishedAffiliateProductPageAsync(page, pageSize, query, platform, featured, cancellationToken, typeIds, international);
             return Results.Ok(new
             {
                 items = result.Items.Select(product => new
@@ -113,6 +115,12 @@ public static class CatalogEndpoints
             var settings = await catalog.GetSettingsAsync(cancellationToken);
             return Results.Ok(new { whatsappNumber = settings.WhatsappNumber });
         });
+    }
+
+    internal static bool TryMarketScope(string? market, out bool international)
+    {
+        international = market == "international";
+        return market is null or "br" or "international";
     }
 
     internal static bool TryParseThemeIds(string? value, out Guid[] ids)

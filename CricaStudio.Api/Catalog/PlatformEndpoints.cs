@@ -15,16 +15,21 @@ public static class PlatformEndpoints
             try { await repo.DeleteAsync(id, ct); return Results.NoContent(); }
             catch (PlatformValidationException ex) { return Problem(ex.Message); }
         });
-        app.MapGet("/api/catalog/platforms", async (string? locale, string? country, bool? storefronts, bool? allMarkets, IPlatformRepository repo, CancellationToken ct) =>
+        app.MapGet("/api/catalog/platforms", async (string? locale, string? country, bool? storefronts, bool? allMarkets, string? market, IPlatformRepository repo, CancellationToken ct) =>
         {
+            if (!CatalogEndpoints.TryMarketScope(market, out _)) return Problem("Selecione o catálogo brasileiro ou internacional.");
             if (!TryMarket(locale ?? "pt-BR", country ?? "BR", out var language, out var region)) return Problem("Informe um idioma e país válidos.");
-            var items = await ReadPublic(repo, language, region, storefronts == true, allMarkets == true, ct);
+            var items = await ReadPublic(repo, language, region, storefronts == true, allMarkets == true, ct, market ?? "br");
             // Supplier filters need platform identity, not unpublished storefront content.
             return Results.Ok(storefronts == true ? items : items.Select(p => p with { Description = "", Url = null, ProductCount = 0 }).ToArray());
         });
     }
-    internal static async Task<IReadOnlyList<CatalogPlatform>> ReadPublic(IPlatformRepository repo, string locale, string country, bool storefronts, bool allMarkets, CancellationToken ct)
+    internal static async Task<IReadOnlyList<CatalogPlatform>> ReadPublic(IPlatformRepository repo, string locale, string country, bool storefronts, bool allMarkets, CancellationToken ct, string? market = null)
     {
+        if (market is not null)
+            return (await repo.GetAsync(null, null, false, storefronts, ct)).Where(p => p.Active
+                && (!storefronts || p.Status == "published")
+                && (p.Locale.Equals("pt-BR", StringComparison.OrdinalIgnoreCase) == (market == "br"))).ToArray();
         // The general storefront directory includes international stores; supplier filters stay local.
         if (storefronts && allMarkets)
             return (await repo.GetAsync(null, null, false, true, ct)).Where(p => p.Active && p.Status == "published").ToArray();

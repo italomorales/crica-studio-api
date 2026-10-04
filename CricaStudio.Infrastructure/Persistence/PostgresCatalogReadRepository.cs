@@ -182,16 +182,17 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
         return await GetAffiliateProductsAsync(onlyPublished: true, cancellationToken);
     }
 
-    public async Task<CatalogPage<AffiliateProduct>> GetPublishedAffiliateProductPageAsync(int page, int pageSize, string? query, string? platform, bool featuredOnly, CancellationToken cancellationToken, IReadOnlyList<Guid>? typeIds = null)
+    public async Task<CatalogPage<AffiliateProduct>> GetPublishedAffiliateProductPageAsync(int page, int pageSize, string? query, string? platform, bool featuredOnly, CancellationToken cancellationToken, IReadOnlyList<Guid>? typeIds = null, bool? international = null)
     {
         const string filters = """
             p.status = 'published'
             AND (@platform IS NULL OR p.platform = @platform)
+            AND (@international IS NULL OR EXISTS(SELECT 1 FROM cricastudio.platforms cp WHERE cp.id=p.platform_id AND cp.is_active AND ((lower(cp.locale)<>'pt-br') = @international)))
             AND (cardinality(@typeIds) = 0 OR p.type_id = ANY(@typeIds))
             AND (@featuredOnly = FALSE OR p.is_featured)
             AND (@query = '' OR translate(lower(p.name || ' ' || p.description), 'áàãâäéèêëíìîïóòõôöúùûüç', 'aaaaaeeeeiiiiooooouuuuc') LIKE '%' || @query || '%')
             """;
-        var total = await CountAsync("cricastudio.affiliate_products p", filters, query, null, platform, featuredOnly, cancellationToken, typeIds: typeIds);
+        var total = await CountAsync("cricastudio.affiliate_products p", filters, query, null, platform, featuredOnly, cancellationToken, typeIds: typeIds, international: international);
         var sql = $"""
             SELECT p.id, p.type_id, p.name, p.description, p.platform, p.image_url, p.affiliate_url, p.seller,
                    p.is_demo_listing, p.is_featured, p.status, p.sort_order, p.images::text, p.is_international, p.platform_id
@@ -204,7 +205,7 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand(sql, connection);
-        AddPageParameters(command, page, pageSize, query, null, platform, featuredOnly, typeIds: typeIds);
+        AddPageParameters(command, page, pageSize, query, null, platform, featuredOnly, typeIds: typeIds, international: international);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
             products.Add(new AffiliateProduct(
@@ -257,17 +258,18 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
     private static IReadOnlyList<string> DeserializeStrings(string value) =>
         JsonSerializer.Deserialize<string[]>(value) ?? [];
 
-    private async Task<int> CountAsync(string table, string filters, string? query, Guid? typeId, string? platform, bool featuredOnly, CancellationToken cancellationToken, IReadOnlyList<Guid>? themeIds = null, IReadOnlyList<Guid>? typeIds = null)
+    private async Task<int> CountAsync(string table, string filters, string? query, Guid? typeId, string? platform, bool featuredOnly, CancellationToken cancellationToken, IReadOnlyList<Guid>? themeIds = null, IReadOnlyList<Guid>? typeIds = null, bool? international = null)
     {
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var command = new NpgsqlCommand($"SELECT count(*) FROM {table} WHERE {filters};", connection);
-        AddPageParameters(command, 1, 1, query, typeId, platform, featuredOnly, themeIds, typeIds);
+        AddPageParameters(command, 1, 1, query, typeId, platform, featuredOnly, themeIds, typeIds, international);
         return Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken));
     }
 
-    private static void AddPageParameters(NpgsqlCommand command, int page, int pageSize, string? query, Guid? typeId, string? platform, bool featuredOnly, IReadOnlyList<Guid>? themeIds = null, IReadOnlyList<Guid>? typeIds = null)
+    private static void AddPageParameters(NpgsqlCommand command, int page, int pageSize, string? query, Guid? typeId, string? platform, bool featuredOnly, IReadOnlyList<Guid>? themeIds = null, IReadOnlyList<Guid>? typeIds = null, bool? international = null)
     {
+        command.Parameters.Add("international", NpgsqlDbType.Boolean).Value = (object?)international ?? DBNull.Value;
         command.Parameters.Add("typeIds", NpgsqlDbType.Array | NpgsqlDbType.Uuid).Value = typeIds?.Distinct().ToArray() ?? [];
         command.Parameters.Add("themeIds", NpgsqlDbType.Array | NpgsqlDbType.Uuid).Value = themeIds?.Distinct().ToArray() ?? [];
         command.Parameters.Add("query", NpgsqlDbType.Text).Value = query ?? string.Empty;

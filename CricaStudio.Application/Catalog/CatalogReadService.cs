@@ -27,8 +27,8 @@ public sealed class CatalogReadService(ICatalogReadRepository repository)
     public Task<IReadOnlyList<AffiliateProduct>> GetPublishedAffiliateProductsAsync(CancellationToken cancellationToken) =>
         repository.GetPublishedAffiliateProductsAsync(cancellationToken);
 
-    public Task<CatalogPage<AffiliateProduct>> GetPublishedAffiliateProductPageAsync(int page, int pageSize, string? query, string? platform, bool featuredOnly, CancellationToken cancellationToken, IReadOnlyList<Guid>? typeIds = null) =>
-        repository.GetPublishedAffiliateProductPageAsync(page, pageSize, query, platform, featuredOnly, cancellationToken, typeIds);
+    public Task<CatalogPage<AffiliateProduct>> GetPublishedAffiliateProductPageAsync(int page, int pageSize, string? query, string? platform, bool featuredOnly, CancellationToken cancellationToken, IReadOnlyList<Guid>? typeIds = null, bool? international = null) =>
+        repository.GetPublishedAffiliateProductPageAsync(page, pageSize, query, platform, featuredOnly, cancellationToken, typeIds, international);
 
     public Task<IReadOnlyList<AffiliateProduct>> GetAllAffiliateProductsAsync(CancellationToken cancellationToken) =>
         repository.GetAllAffiliateProductsAsync(cancellationToken);
