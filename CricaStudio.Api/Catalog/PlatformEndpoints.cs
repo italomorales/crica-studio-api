@@ -15,13 +15,20 @@ public static class PlatformEndpoints
             try { await repo.DeleteAsync(id, ct); return Results.NoContent(); }
             catch (PlatformValidationException ex) { return Problem(ex.Message); }
         });
-        app.MapGet("/api/catalog/platforms", async (string? locale, string? country, bool? storefronts, IPlatformRepository repo, CancellationToken ct) =>
+        app.MapGet("/api/catalog/platforms", async (string? locale, string? country, bool? storefronts, bool? allMarkets, IPlatformRepository repo, CancellationToken ct) =>
         {
             if (!TryMarket(locale ?? "pt-BR", country ?? "BR", out var language, out var region)) return Problem("Informe um idioma e país válidos.");
-            var items = await repo.GetAsync(language, region, true, storefronts == true, ct);
+            var items = await ReadPublic(repo, language, region, storefronts == true, allMarkets == true, ct);
             // Supplier filters need platform identity, not unpublished storefront content.
             return Results.Ok(storefronts == true ? items : items.Select(p => p with { Description = "", Url = null, ProductCount = 0 }).ToArray());
         });
+    }
+    internal static async Task<IReadOnlyList<CatalogPlatform>> ReadPublic(IPlatformRepository repo, string locale, string country, bool storefronts, bool allMarkets, CancellationToken ct)
+    {
+        // The general storefront directory includes international stores; supplier filters stay local.
+        if (storefronts && allMarkets)
+            return (await repo.GetAsync(null, null, false, true, ct)).Where(p => p.Active && p.Status == "published").ToArray();
+        return await repo.GetAsync(locale, country, true, storefronts, ct);
     }
     internal static bool SafeUrl(string? value) => string.IsNullOrEmpty(value) || (Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme == "https" && string.IsNullOrEmpty(uri.UserInfo) && !string.IsNullOrEmpty(uri.Host));
     internal static bool SafeLogoUrl(string? value) => SafeUrl(value) || value is
@@ -43,7 +50,7 @@ public static class PlatformEndpoints
         catch (ArgumentException) { return false; }
     }
     private static IResult Problem(string message) => Results.ValidationProblem(new Dictionary<string, string[]> { ["platform"] = [message] });
-    private static async Task<IResult> Save(CatalogPlatform item, bool create, IPlatformRepository repo, CancellationToken ct)
+    internal static async Task<IResult> Save(CatalogPlatform item, bool create, IPlatformRepository repo, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(item.Name) || item.Name.Trim().Length > 120 || string.IsNullOrWhiteSpace(item.Code)
             || !Regex.IsMatch(item.Code, "^[a-z0-9][a-z0-9-]{0,39}$") || item.Description is null || item.Description.Length > 500
