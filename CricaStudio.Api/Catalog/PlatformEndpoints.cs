@@ -6,7 +6,7 @@ public static class PlatformEndpoints
 {
     public static void MapPlatformEndpoints(this WebApplication app)
     {
-        var admin = app.MapGroup("/api/admin/catalog/platforms").RequireAuthorization();
+        var admin = app.MapGroup("/api/admin/catalog/platforms").RequireAuthorization().AddEndpointFilter<TranslationEndpointFilter>();
         admin.MapGet("/", (IPlatformRepository repo, CancellationToken ct) => repo.GetAsync(null, null, false, false, ct));
         admin.MapPost("/", (CatalogPlatform item, IPlatformRepository repo, CancellationToken ct) => Save(item with { Id = Guid.NewGuid() }, true, repo, ct));
         admin.MapPut("/{id:guid}", (Guid id, CatalogPlatform item, IPlatformRepository repo, CancellationToken ct) => Save(item with { Id = id }, false, repo, ct));
@@ -22,7 +22,7 @@ public static class PlatformEndpoints
             var items = await ReadPublic(repo, language, region, storefronts == true, allMarkets == true, ct, market ?? "br");
             // Supplier filters need platform identity, not unpublished storefront content.
             return Results.Ok(storefronts == true ? items : items.Select(p => p with { Description = "", Url = null, ProductCount = 0 }).ToArray());
-        });
+        }).AddEndpointFilter<TranslationEndpointFilter>();
     }
     internal static async Task<IReadOnlyList<CatalogPlatform>> ReadPublic(IPlatformRepository repo, string locale, string country, bool storefronts, bool allMarkets, CancellationToken ct, string? market = null)
     {

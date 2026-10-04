@@ -2,9 +2,11 @@ namespace CricaStudio.Domain.Catalog;
 
 public sealed record CatalogPage<T>(IReadOnlyList<T> Items, int Total);
 
-public sealed record CatalogType(Guid Id, string Name, string Scope, bool IsActive);
+public sealed record CatalogType(Guid Id, string Name, string Scope, bool IsActive) : ITranslationInput
+{ public Dictionary<string,CatalogTranslation>? Translations { get; init; } }
 
-public sealed record CatalogTheme(Guid Id, string Name, bool IsActive, int ProductCount = 0);
+public sealed record CatalogTheme(Guid Id, string Name, bool IsActive, int ProductCount = 0) : ITranslationInput
+{ public Dictionary<string,CatalogTranslation>? Translations { get; init; } }
 public sealed class CatalogThemeValidationException(string message) : Exception(message);
 
 public sealed record ProductImage(Guid Id, string Url, int SortOrder);
@@ -41,8 +43,9 @@ public sealed record AffiliateProduct(
     bool IsDemoListing,
     bool IsFeatured,
     string Status,
-    int SortOrder)
+    int SortOrder) : ITranslationInput
 {
+    public Dictionary<string,CatalogTranslation>? Translations { get; init; }
     public IReadOnlyList<string> Images { get; init; } = [];
     public bool IsInternational { get; init; }
     public Guid? PlatformId { get; init; }

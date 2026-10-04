@@ -190,7 +190,7 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
             AND (@international IS NULL OR EXISTS(SELECT 1 FROM cricastudio.platforms cp WHERE cp.id=p.platform_id AND cp.is_active AND ((lower(cp.locale)<>'pt-br') = @international)))
             AND (cardinality(@typeIds) = 0 OR p.type_id = ANY(@typeIds))
             AND (@featuredOnly = FALSE OR p.is_featured)
-            AND (@query = '' OR translate(lower(p.name || ' ' || p.description), 'áàãâäéèêëíìîïóòõôöúùûüç', 'aaaaaeeeeiiiiooooouuuuc') LIKE '%' || @query || '%')
+            AND (@query = '' OR translate(lower(p.name || ' ' || p.description), 'áàãâäéèêëíìîïóòõôöúùûüç', 'aaaaaeeeeiiiiooooouuuuc') LIKE '%' || @query || '%' OR EXISTS(SELECT 1 FROM cricastudio.affiliate_translations tr JOIN cricastudio.catalog_languages l ON l.code=tr.language_code AND l.is_active WHERE tr.entity_id=p.id AND tr.status='reviewed' AND translate(lower(COALESCE(tr.fields->>'name','') || ' ' || COALESCE(tr.fields->>'description','')), 'áàãâäéèêëíìîïóòõôöúùûüç', 'aaaaaeeeeiiiiooooouuuuc') LIKE '%' || @query || '%'))
             """;
         var total = await CountAsync("cricastudio.affiliate_products p", filters, query, null, platform, featuredOnly, cancellationToken, typeIds: typeIds, international: international);
         var sql = $"""

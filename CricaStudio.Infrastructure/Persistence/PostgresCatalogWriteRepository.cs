@@ -15,13 +15,16 @@ public sealed class PostgresCatalogWriteRepository(string connectionString) : IC
             """;
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(ct);
-        await using var command = new NpgsqlCommand(sql, connection);
+        await using var transaction = System.Transactions.Transaction.Current is null ? await connection.BeginTransactionAsync(ct) : null;
+        await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("id", id);
         command.Parameters.AddWithValue("name", theme.Name);
         command.Parameters.AddWithValue("active", theme.IsActive);
         try { await command.ExecuteNonQueryAsync(ct); }
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         { throw new CatalogThemeValidationException("Já existe um tema com esse nome."); }
+        await PostgresTranslationRepository.SaveAsync(connection,transaction,"themes",id,theme.Translations,ct);
+        if(transaction is not null) await transaction.CommitAsync(ct);
         return theme with { Id = id };
     }
 
@@ -60,14 +63,19 @@ public sealed class PostgresCatalogWriteRepository(string connectionString) : IC
         var id = type.Id == Guid.Empty ? Guid.NewGuid() : type.Id;
         const string sql = """INSERT INTO cricastudio.catalog_types (id,name,scope,is_active) VALUES (@id,@name,@scope,@active) ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name,scope=EXCLUDED.scope,is_active=EXCLUDED.is_active RETURNING id,name,scope,is_active;""";
         await using var c = new NpgsqlConnection(connectionString); await c.OpenAsync(cancellationToken);
-        await using var cmd = new NpgsqlCommand(sql, c); cmd.Parameters.AddWithValue("id", id); cmd.Parameters.AddWithValue("name", type.Name); cmd.Parameters.AddWithValue("scope", type.Scope); cmd.Parameters.AddWithValue("active", type.IsActive);
+        await using var tx = System.Transactions.Transaction.Current is null ? await c.BeginTransactionAsync(cancellationToken) : null;
+        await using var cmd = new NpgsqlCommand(sql, c, tx); cmd.Parameters.AddWithValue("id", id); cmd.Parameters.AddWithValue("name", type.Name); cmd.Parameters.AddWithValue("scope", type.Scope); cmd.Parameters.AddWithValue("active", type.IsActive);
         await using var r = await cmd.ExecuteReaderAsync(cancellationToken); await r.ReadAsync(cancellationToken);
-        return new CatalogType(r.GetGuid(0), r.GetString(1), r.GetString(2), r.GetBoolean(3));
+        var saved = new CatalogType(r.GetGuid(0), r.GetString(1), r.GetString(2), r.GetBoolean(3));
+        await r.DisposeAsync();
+        await PostgresTranslationRepository.SaveAsync(c,tx,"types",id,type.Translations,cancellationToken);
+        if(tx is not null) await tx.CommitAsync(cancellationToken);
+        return saved with {Translations=type.Translations};
     }
     public async Task<ShopProduct> SaveShopProductAsync(ShopProduct product, CancellationToken cancellationToken)
     {
         var id = product.Id == Guid.Empty ? Guid.NewGuid() : product.Id;
-        await using var c = new NpgsqlConnection(connectionString); await c.OpenAsync(cancellationToken); await using var tx = await c.BeginTransactionAsync(cancellationToken);
+        await using var c = new NpgsqlConnection(connectionString); await c.OpenAsync(cancellationToken); await using var tx = System.Transactions.Transaction.Current is null ? await c.BeginTransactionAsync(cancellationToken) : null;
         // Lock themes while validating and saving, so deactivation/deletion cannot race the links.
         var selectedThemes = product.ThemeIds.Distinct().ToArray();
         var availableThemes = new Dictionary<Guid, bool>();
@@ -101,15 +109,15 @@ public sealed class PostgresCatalogWriteRepository(string connectionString) : IC
             command.Parameters.AddWithValue("ids", selectedThemes);
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
-        await tx.CommitAsync(cancellationToken);
+        if(tx is not null) await tx.CommitAsync(cancellationToken);
         return product with { Id = id, Images = product.Images.Select((image, index) => image with { SortOrder = index }).ToArray() };
     }
     public async Task<AffiliateProduct> SaveAffiliateProductAsync(AffiliateProduct product, CancellationToken cancellationToken)
     {
         var id = product.Id == Guid.Empty ? Guid.NewGuid() : product.Id;
         const string sql = """INSERT INTO cricastudio.affiliate_products (id,type_id,name,description,platform,platform_id,images,image_url,affiliate_url,seller,is_demo_listing,is_featured,is_international,status,sort_order) VALUES (@id,@typeId,@name,@description,@platform,COALESCE(@platformId,(SELECT id FROM cricastudio.platforms WHERE name=@platform ORDER BY (locale='pt-BR' AND country_code='BR') DESC,sort_order,id LIMIT 1)),@images::jsonb,@image,@url,@seller,@demo,@featured,@international,@status,@order) ON CONFLICT (id) DO UPDATE SET type_id=EXCLUDED.type_id,name=EXCLUDED.name,description=EXCLUDED.description,platform=EXCLUDED.platform,platform_id=EXCLUDED.platform_id,images=EXCLUDED.images,image_url=EXCLUDED.image_url,affiliate_url=EXCLUDED.affiliate_url,seller=EXCLUDED.seller,is_demo_listing=EXCLUDED.is_demo_listing,is_featured=EXCLUDED.is_featured,is_international=EXCLUDED.is_international,status=EXCLUDED.status,sort_order=EXCLUDED.sort_order;""";
-        await using var c = new NpgsqlConnection(connectionString); await c.OpenAsync(cancellationToken); await using var cmd = new NpgsqlCommand(sql,c);
-        cmd.Parameters.AddWithValue("id",id); cmd.Parameters.AddWithValue("typeId",product.TypeId); cmd.Parameters.AddWithValue("name",product.Name); cmd.Parameters.AddWithValue("description",product.Description); cmd.Parameters.AddWithValue("platform",product.Platform); cmd.Parameters.Add("platformId",NpgsqlTypes.NpgsqlDbType.Uuid).Value=(object?)product.PlatformId??DBNull.Value; cmd.Parameters.AddWithValue("images",JsonSerializer.Serialize(product.Images)); cmd.Parameters.AddWithValue("image",(object?)product.ImageUrl??DBNull.Value); cmd.Parameters.AddWithValue("url",(object?)product.AffiliateUrl??DBNull.Value); cmd.Parameters.AddWithValue("seller",(object?)product.Seller??DBNull.Value); cmd.Parameters.AddWithValue("international",product.IsInternational); cmd.Parameters.AddWithValue("demo",product.IsDemoListing); cmd.Parameters.AddWithValue("featured",product.IsFeatured); cmd.Parameters.AddWithValue("status",product.Status); cmd.Parameters.AddWithValue("order",product.SortOrder); await cmd.ExecuteNonQueryAsync(cancellationToken); return product with { Id=id };
+        await using var c = new NpgsqlConnection(connectionString); await c.OpenAsync(cancellationToken); await using var tx = System.Transactions.Transaction.Current is null ? await c.BeginTransactionAsync(cancellationToken) : null; await using var cmd = new NpgsqlCommand(sql,c,tx);
+        cmd.Parameters.AddWithValue("id",id); cmd.Parameters.AddWithValue("typeId",product.TypeId); cmd.Parameters.AddWithValue("name",product.Name); cmd.Parameters.AddWithValue("description",product.Description); cmd.Parameters.AddWithValue("platform",product.Platform); cmd.Parameters.Add("platformId",NpgsqlTypes.NpgsqlDbType.Uuid).Value=(object?)product.PlatformId??DBNull.Value; cmd.Parameters.AddWithValue("images",JsonSerializer.Serialize(product.Images)); cmd.Parameters.AddWithValue("image",(object?)product.ImageUrl??DBNull.Value); cmd.Parameters.AddWithValue("url",(object?)product.AffiliateUrl??DBNull.Value); cmd.Parameters.AddWithValue("seller",(object?)product.Seller??DBNull.Value); cmd.Parameters.AddWithValue("international",product.IsInternational); cmd.Parameters.AddWithValue("demo",product.IsDemoListing); cmd.Parameters.AddWithValue("featured",product.IsFeatured); cmd.Parameters.AddWithValue("status",product.Status); cmd.Parameters.AddWithValue("order",product.SortOrder); await cmd.ExecuteNonQueryAsync(cancellationToken); await PostgresTranslationRepository.SaveAsync(c,tx,"affiliates",id,product.Translations,cancellationToken); if(tx is not null) await tx.CommitAsync(cancellationToken); return product with { Id=id };
     }
     public async Task<int> CountPublishedFeaturedShopProductsAsync(Guid excludingId, CancellationToken cancellationToken)
     {

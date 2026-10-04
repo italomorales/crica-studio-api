@@ -64,6 +64,7 @@ builder.Services.AddSingleton<IAccessTokenService>(new JwtTokenService(jwtSettin
 builder.Services.AddScoped<LoginUseCase>();
 builder.Services.AddScoped<CatalogReadService>();
 builder.Services.AddScoped<IPlatformRepository>(_ => new PostgresPlatformRepository(databaseConnectionString ?? throw new InvalidOperationException("Banco não configurado.")));
+builder.Services.AddScoped<ITranslationRepository>(_ => new PostgresTranslationRepository(databaseConnectionString ?? throw new InvalidOperationException("Banco não configurado.")));
 builder.Services.AddHealthChecks();
 
 var app = builder.Build();
@@ -97,6 +98,7 @@ app.MapAuthEndpoints();
 app.MapCatalogEndpoints();
 app.MapAdminCatalogEndpoints();
 app.MapPlatformEndpoints();
+app.MapTranslationEndpoints();
 
 app.Run();
 

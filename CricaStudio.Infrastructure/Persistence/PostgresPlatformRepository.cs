@@ -52,6 +52,7 @@ public sealed class PostgresPlatformRepository(string connectionString) : IPlatf
             await using var count = new NpgsqlCommand("SELECT count(*)::int FROM cricastudio.affiliate_products WHERE platform_id=@id", connection, transaction);
             count.Parameters.AddWithValue("id", item.Id);
             var productCount = (int)(await count.ExecuteScalarAsync(ct))!;
+            await PostgresTranslationRepository.SaveAsync(connection,transaction,"platforms",item.Id,item.Translations,ct);
             if (transaction is not null) await transaction.CommitAsync(ct);
             return item with { ProductCount = productCount };
         }

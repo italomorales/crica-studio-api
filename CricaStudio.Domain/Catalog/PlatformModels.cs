@@ -1,8 +1,9 @@
 namespace CricaStudio.Domain.Catalog;
 
 public sealed record CatalogPlatform(Guid Id, string Name, string Code, string Description, string? Url,
-    string? LogoUrl, string Locale, string CountryCode, string Status, int Order, bool MobileOnly, bool Active)
+    string? LogoUrl, string Locale, string CountryCode, string Status, int Order, bool MobileOnly, bool Active) : ITranslationInput
 {
+    public Dictionary<string,CatalogTranslation>? Translations { get; init; }
     public int ProductCount { get; init; }
 }
 public sealed class PlatformValidationException(string message) : Exception(message);

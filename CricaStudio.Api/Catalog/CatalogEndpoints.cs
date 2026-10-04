@@ -7,7 +7,7 @@ public static class CatalogEndpoints
 {
     public static void MapCatalogEndpoints(this WebApplication app)
     {
-        var group = app.MapGroup("/api/catalog").WithTags("Catalog");
+        var group = app.MapGroup("/api/catalog").WithTags("Catalog").AddEndpointFilter<TranslationEndpointFilter>();
 
         group.MapGet("/themes", async (CatalogReadService catalog, CancellationToken ct) =>
             Results.Ok((await catalog.GetThemesAsync(true, ct)).Select(t => new { id = t.Id, name = t.Name, active = t.IsActive, productCount = t.ProductCount })));

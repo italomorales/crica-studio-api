@@ -9,7 +9,7 @@ public static class AdminCatalogEndpoints
 {
     public static void MapAdminCatalogEndpoints(this WebApplication app)
     {
-        var group = app.MapGroup("/api/admin/catalog").RequireAuthorization().WithTags("Admin catalog");
+        var group = app.MapGroup("/api/admin/catalog").RequireAuthorization().WithTags("Admin catalog").AddEndpointFilter<TranslationEndpointFilter>();
 
         group.MapGet("/themes", async (CatalogReadService catalog, CancellationToken ct) =>
             Results.Ok((await catalog.GetThemesAsync(false, ct)).Select(t => new { id = t.Id, name = t.Name, active = t.IsActive, productCount = t.ProductCount })));
@@ -108,13 +108,13 @@ public static class AdminCatalogEndpoints
         group.MapPost("/types", async (TypeRequest request, ICatalogWriteRepository repo, CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(request.Name) || !new[] { "shop", "suppliers", "both" }.Contains(request.Scope)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["type"] = ["Informe nome e aplicação válidos."] });
-            var saved = await repo.SaveTypeAsync(new CatalogType(request.Id, request.Name.Trim(), request.Scope, request.Active), ct);
+            var saved = await repo.SaveTypeAsync(new CatalogType(request.Id, request.Name.Trim(), request.Scope, request.Active) { Translations = request.Translations }, ct);
             return Results.Ok(new { id=saved.Id, name=saved.Name, scope=saved.Scope, active=saved.IsActive });
         });
         group.MapPut("/types/{id:guid}", async (Guid id, TypeRequest request, ICatalogWriteRepository repo, CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(request.Name) || !new[] { "shop", "suppliers", "both" }.Contains(request.Scope)) return Results.ValidationProblem(new Dictionary<string, string[]> { ["type"] = ["Informe nome e aplicação válidos."] });
-            var saved = await repo.SaveTypeAsync(new CatalogType(id, request.Name.Trim(), request.Scope, request.Active), ct);
+            var saved = await repo.SaveTypeAsync(new CatalogType(id, request.Name.Trim(), request.Scope, request.Active) { Translations = request.Translations }, ct);
             return Results.Ok(new { id=saved.Id, name=saved.Name, scope=saved.Scope, active=saved.IsActive });
         });
         group.MapDelete("/types/{id:guid}", async (Guid id, CatalogReadService catalog, ICatalogWriteRepository repo, CancellationToken ct) =>
@@ -146,7 +146,7 @@ public static class AdminCatalogEndpoints
             return ThemeProblem("Informe um nome de tema com até 120 caracteres.");
         try
         {
-            var saved = await repo.SaveThemeAsync(new CatalogTheme(id, request.Name.Trim(), request.Active), ct);
+            var saved = await repo.SaveThemeAsync(new CatalogTheme(id, request.Name.Trim(), request.Active) { Translations = request.Translations }, ct);
             return Results.Ok(new { id = saved.Id, name = saved.Name, active = saved.IsActive });
         }
         catch (CatalogThemeValidationException ex) { return ThemeProblem(ex.Message); }
@@ -213,7 +213,7 @@ public static class AdminCatalogEndpoints
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["platform"] = ["Selecione uma plataforma cadastrada."] });
         if (!selectedPlatform.Active && !(await catalog.GetAllAffiliateProductsAsync(ct)).Any(p => p.Id == id && p.PlatformId == selectedPlatform.Id))
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["platform"] = ["Selecione uma plataforma ativa."] });
-        var affiliate = await repo.SaveAffiliateProductAsync(new AffiliateProduct(id, r.TypeId, r.Name.Trim(), r.Description.Trim(), selectedPlatform.Name, images.FirstOrDefault()?.Trim(), r.Url?.Trim(), r.Seller?.Trim(), r.DemoListing, r.Featured, r.Status, r.Order) { Images = images.Select(image => image.Trim()).ToArray(), IsInternational = r.International, PlatformId = selectedPlatform.Id }, ct);
+        var affiliate = await repo.SaveAffiliateProductAsync(new AffiliateProduct(id, r.TypeId, r.Name.Trim(), r.Description.Trim(), selectedPlatform.Name, images.FirstOrDefault()?.Trim(), r.Url?.Trim(), r.Seller?.Trim(), r.DemoListing, r.Featured, r.Status, r.Order) { Images = images.Select(image => image.Trim()).ToArray(), IsInternational = r.International, PlatformId = selectedPlatform.Id, Translations = r.Translations }, ct);
         return Results.Ok(new { id = affiliate.Id });
     }
 
@@ -224,11 +224,11 @@ public static class AdminCatalogEndpoints
         Uri.TryCreate(value, UriKind.Absolute, out var uri) && uri.Scheme == Uri.UriSchemeHttps && string.IsNullOrEmpty(uri.UserInfo);
 }
 
-public sealed record TypeRequest(Guid Id, string Name, string Scope, bool Active);
+public sealed record TypeRequest(Guid Id, string Name, string Scope, bool Active) : ITranslationInput { public Dictionary<string,CatalogTranslation>? Translations { get; init; } }
 public sealed record ProductRequest(Guid TypeId,string Name,string? Slug,string Description,string? FullDescription,string PriceMode,decimal? Price,bool Demo,bool Featured,string[]? Characteristics,string[]? Personalization,string[]? Images,string Status,int Order,Guid[]? ThemeIds = null);
-public sealed record AffiliateRequest(Guid TypeId,string Name,string Description,string Platform,string? Image,string? Url,string? Seller,bool DemoListing,bool Featured,string Status,int Order,string[]? Images = null,bool International = false,Guid? PlatformId = null);
+public sealed record AffiliateRequest(Guid TypeId,string Name,string Description,string Platform,string? Image,string? Url,string? Seller,bool DemoListing,bool Featured,string Status,int Order,string[]? Images = null,bool International = false,Guid? PlatformId = null) : ITranslationInput { public Dictionary<string,CatalogTranslation>? Translations { get; init; } }
 public sealed record SettingsRequest(string WhatsappNumber);
 
 public sealed record CatalogOrderRequest(Guid[]? Ids, CatalogOrderEntry[]? Expected);
 
-public sealed record ThemeRequest(string Name, bool Active);
+public sealed record ThemeRequest(string Name, bool Active) : ITranslationInput { public Dictionary<string,CatalogTranslation>? Translations { get; init; } }
