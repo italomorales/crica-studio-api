@@ -9,6 +9,9 @@ using CricaStudio.Infrastructure.Persistence;
 using CricaStudio.Infrastructure.Security;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
+using CricaStudio.Api.Blog;
+using CricaStudio.Domain.Blog;
+using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -59,6 +62,11 @@ builder.Services.AddScoped<ICatalogWriteRepository>(_ => string.IsNullOrWhiteSpa
     : new PostgresCatalogWriteRepository(databaseConnectionString));
 builder.Services.AddSingleton(catalogMediaOptions);
 builder.Services.AddScoped<ICatalogMediaStorage, S3CatalogMediaStorage>();
+var localBlogMedia = (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("BlogTest")) && catalogMediaOptions.Provider == "local" && !string.IsNullOrWhiteSpace(catalogMediaOptions.LocalDirectory);
+if (localBlogMedia) builder.Services.AddScoped<ICatalogMediaStorage, LocalBlogMediaStorage>();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<IBlogRepository>(_ => new PostgresBlogRepository(databaseConnectionString ?? throw new InvalidOperationException("Banco não configurado.")));
+builder.Services.AddScoped<BlogService>();
 builder.Services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
 builder.Services.AddSingleton<IAccessTokenService>(new JwtTokenService(jwtSettings));
 builder.Services.AddScoped<LoginUseCase>();
@@ -72,6 +80,11 @@ var app = builder.Build();
 app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();
+if (localBlogMedia)
+{
+    Directory.CreateDirectory(catalogMediaOptions.LocalDirectory);
+    app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(Path.GetFullPath(catalogMediaOptions.LocalDirectory)), RequestPath = "/catalog/blog" });
+}
 app.MapHealthChecks("/health");
 app.MapGet("/health/database", async (CancellationToken cancellationToken) =>
 {
@@ -99,6 +112,13 @@ app.MapCatalogEndpoints();
 app.MapAdminCatalogEndpoints();
 app.MapPlatformEndpoints();
 app.MapTranslationEndpoints();
+app.MapBlogEndpoints();
+app.MapBlogHtmlEndpoints();
+if (builder.Environment.IsEnvironment("BlogTest") && !string.IsNullOrWhiteSpace(builder.Configuration["Blog:FrontendDirectory"]))
+{
+    var frontend = Path.GetFullPath(builder.Configuration["Blog:FrontendDirectory"]!);
+    app.UseStaticFiles(new StaticFileOptions { FileProvider = new PhysicalFileProvider(frontend) });
+}
 
 app.Run();
 

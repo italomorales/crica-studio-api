@@ -11,6 +11,8 @@ public sealed class CatalogMediaOptions
     public string Bucket { get; init; } = string.Empty;
     public string Region { get; init; } = "sa-east-1";
     public string PublicBaseUrl { get; init; } = string.Empty;
+    public string Provider { get; init; } = "s3";
+    public string LocalDirectory { get; init; } = string.Empty;
 
     public void Validate()
     {
@@ -37,7 +39,7 @@ public sealed class S3CatalogMediaStorage(CatalogMediaOptions options) : ICatalo
     public async Task<string> UploadAsync(string category, IFormFile file, CancellationToken cancellationToken)
     {
         options.Validate();
-        if (category is not ("products" or "affiliates" or "platforms"))
+        if (category is not ("products" or "affiliates" or "platforms" or "blog"))
             throw new CatalogMediaValidationException("Destino de mídia inválido.");
         if (file.Length is <= 0 or > MaxFileSize)
             throw new CatalogMediaValidationException("Escolha uma imagem de até 5 MB.");
@@ -62,7 +64,7 @@ public sealed class S3CatalogMediaStorage(CatalogMediaOptions options) : ICatalo
         return $"{options.PublicBaseUrl.TrimEnd('/')}/{key}";
     }
 
-    private static async Task<bool> HasExpectedSignatureAsync(Stream stream, string contentType, CancellationToken cancellationToken)
+    internal static async Task<bool> HasExpectedSignatureAsync(Stream stream, string contentType, CancellationToken cancellationToken)
     {
         var header = new byte[12];
         var length = await stream.ReadAsync(header.AsMemory(0, header.Length), cancellationToken);

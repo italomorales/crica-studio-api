@@ -15,9 +15,13 @@ services:
       CatalogMedia__Bucket: ${CATALOG_MEDIA_BUCKET:-}
       CatalogMedia__Region: ${CATALOG_MEDIA_REGION:-sa-east-1}
       CatalogMedia__PublicBaseUrl: ${CATALOG_MEDIA_PUBLIC_BASE_URL:-}
+      Blog__FrontendDirectory: /app/blog-frontend
+      Blog__PublicSiteUrl: ${BLOG_PUBLIC_SITE_URL:-https://www.cricastudio.com.br}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
     restart: unless-stopped
+    volumes:
+      - ./blog-frontend:/app/blog-frontend:ro
 
   nginx:
     build:

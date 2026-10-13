@@ -6,3 +6,7 @@ obj/
 *.suo
 appsettings.Local.json
 certbot/
+.blog-build/
+.blog-local/
+.blog-test-build/
+blog-frontend/
