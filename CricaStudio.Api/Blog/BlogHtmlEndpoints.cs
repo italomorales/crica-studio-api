@@ -20,7 +20,7 @@ public static class BlogHtmlEndpoints
         var source=await File.ReadAllTextAsync(System.IO.Path.Combine(directory,"index.html"),ct);
         var assets=string.Join("\n",Regex.Matches(source,"<script\\b[^>]*src=[^>]*></script>|<link\\b[^>]*(?:stylesheet|modulepreload)[^>]*>",RegexOptions.IgnoreCase).Select(m=>m.Value));
         var css=Directory.GetFiles(System.IO.Path.Combine(directory,"assets"),"blog-*.css").Select(f=>$"<link rel=\"stylesheet\" href=\"/assets/{E(System.IO.Path.GetFileName(f))}\">");
-        return $"<!doctype html><html lang=\"{E(locale)}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><base href=\"/\"><title>{E(title)} | Crica Studio</title><meta name=\"description\" content=\"{E(description)}\"><meta name=\"robots\" content=\"{(indexable?"index,follow":"noindex,nofollow")}\"><link rel=\"canonical\" href=\"{E(canonical)}\"><meta property=\"og:title\" content=\"{E(title)}\"><meta property=\"og:description\" content=\"{E(description)}\"><meta property=\"og:url\" content=\"{E(canonical)}\"><meta property=\"og:site_name\" content=\"Crica Studio\"><meta name=\"twitter:card\" content=\"summary_large_image\">{extra}{assets}{string.Join("",css)}</head><body><crica-app><header class=\"container\"><a href=\"/\"><img width=\"140\" src=\"/assets/crica-studio-logo-transparent.png\" alt=\"Crica Studio\"></a><nav><a href=\"/loja\">Loja</a> · <a href=\"/vitrine\">Vitrine</a> · <a href=\"/blog\">Blog</a></nav></header>{body}</crica-app></body></html>";
+        return $"<!doctype html><html lang=\"{E(locale)}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><base href=\"/\"><title>{E(title)} | Crica Studio</title><meta name=\"description\" content=\"{E(description)}\"><meta name=\"robots\" content=\"{(indexable?"index,follow":"noindex,nofollow")}\"><link rel=\"canonical\" href=\"{E(canonical)}\"><meta property=\"og:title\" content=\"{E(title)}\"><meta property=\"og:description\" content=\"{E(description)}\"><meta property=\"og:url\" content=\"{E(canonical)}\"><meta property=\"og:site_name\" content=\"Crica Studio\"><meta name=\"twitter:card\" content=\"summary_large_image\">{extra}{assets}{string.Join("",css)}</head><body><crica-app><header class=\"container\"><a href=\"/\"><img width=\"140\" src=\"/assets/crica-studio-logo-transparent.png\" alt=\"Crica Studio\"></a><nav><a href=\"/loja\">Loja</a> · <a href=\"/vitrine\">Vitrine</a> · <a href=\"/blog\">News</a></nav></header>{body}</crica-app></body></html>";
     }
     public static void MapBlogHtmlEndpoints(this WebApplication app)
     {
@@ -33,7 +33,7 @@ public static class BlogHtmlEndpoints
             var categoryId=Guid.TryParse(http.Request.Query["categoria"],out var cat)?(Guid?)cat:null;
             var data=await repo.ListAsync(locale,page,6,query,categoryId,null,true,ct);
             var categories=await repo.CategoriesAsync(true,ct);
-            var body=new StringBuilder("<main id=\"main\" class=\"blog-page container\"><header class=\"blog-intro\"><span class=\"eyebrow\">CADERNO CRICA</span><h1>Entre uma ideia<br>e <span>outra.</span></h1><p>Inspiração, histórias e detalhes para criar algo que tenha a sua essência.</p></header>");
+            var body=new StringBuilder("<main id=\"main\" class=\"blog-page container\"><header class=\"blog-intro\"><span class=\"eyebrow\">CRICA NEWS</span><h1>Entre uma ideia<br>e <span>outra.</span></h1><p>Inspiração, histórias e detalhes para criar algo que tenha a sua essência.</p></header>");
             body.Append($"<form class=\"blog-search\" action=\"/blog\"><input type=\"hidden\" name=\"idioma\" value=\"{E(locale)}\"><label>Buscar matérias<input name=\"q\" value=\"{E(query)}\" type=\"search\"></label><button>Buscar</button></form><nav class=\"blog-categories\"><a href=\"/blog?idioma={E(locale)}\">Todas</a>");
             foreach(var c in categories)body.Append($"<a href=\"/blog?idioma={E(locale)}&amp;categoria={c.Id}\">{E(c.Translations.GetValueOrDefault(locale,c.Name))}</a>");
             body.Append($"</nav><p>{data.Total} matérias</p><section class=\"blog-feed blog-grid\">");
@@ -45,7 +45,7 @@ public static class BlogHtmlEndpoints
             if(page*6<data.Total)body.Append($"<a href=\"{Page(page+1)}\">Próxima →</a>");
             body.Append("</nav></main>");
             http.Response.Headers.CacheControl="no-cache";
-            return Results.Content(await Shell(config,locale,"Caderno Crica","Inspiração e histórias da Crica Studio.",Site(config)+"/blog"+(locale=="pt"?"":$"?idioma={locale}"),body.ToString(),"",query.Length==0&&categoryId is null&&page==1,ct),"text/html; charset=utf-8");
+            return Results.Content(await Shell(config,locale,"Crica News","Inspiração e histórias da Crica Studio.",Site(config)+"/blog"+(locale=="pt"?"":$"?idioma={locale}"),body.ToString(),"",query.Length==0&&categoryId is null&&page==1,ct),"text/html; charset=utf-8");
         });
         group.MapGet("/{locale}/{slug}",async(string locale,string slug,HttpContext http,IConfiguration config,IBlogRepository repo,BlogService service,CancellationToken ct)=>{
             if(!BlogPolicy.ValidLocale(locale))return Results.NotFound();
