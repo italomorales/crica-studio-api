@@ -7,7 +7,7 @@ using CricaStudio.Domain.Blog;
 
 namespace CricaStudio.Api.Blog;
 
-public sealed record BlogWriteRequest(Guid CategoryId,string Cover,string Author,DateOnly Date,bool Featured,BlogVersion Version);
+public sealed record BlogWriteRequest(Guid CategoryId,string Cover,string Author,DateOnly Date,bool Featured,BlogVersion Version) { public Guid? AuthorId {get;init;} }
 public sealed class BlogEndpointFilter : IEndpointFilter
 {
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context,EndpointFilterDelegate next)
@@ -22,12 +22,15 @@ public sealed class BlogEndpointFilter : IEndpointFilter
 }
 public static class BlogEndpoints
 {
-    private static BlogSave Save(BlogWriteRequest request)=>new(request.CategoryId,request.Cover,request.Author,request.Date,request.Featured,request.Version);
+    private static BlogSave Save(BlogWriteRequest request)=>new(request.CategoryId,request.Cover,request.Author,request.Date,request.Featured,request.Version){AuthorId=request.AuthorId};
     private static void Locale(string locale){if(!BlogPolicy.ValidLocale(locale))throw new BlogValidationException("Idioma inválido.");}
     public static void MapBlogEndpoints(this WebApplication app)
     {
         var admin=app.MapGroup("/api/admin/blog").RequireAuthorization().WithTags("Blog admin").AddEndpointFilter<BlogEndpointFilter>();
         var blog=app.MapGroup("/api/blog").WithTags("Blog").AddEndpointFilter<BlogEndpointFilter>();
+        admin.MapGet("/authors",async(IBlogRepository repo,CancellationToken ct)=>Results.Ok(await repo.AuthorsAsync(ct)));
+        admin.MapPut("/authors/{id:guid}",async(Guid id,BlogAuthor author,BlogService service,CancellationToken ct)=>Results.Ok(await service.SaveAuthorAsync(author with{Id=id},ct)));
+        admin.MapDelete("/authors/{id:guid}",async(Guid id,IBlogRepository repo,CancellationToken ct)=>{await repo.DeleteAuthorAsync(id,ct);return Results.NoContent();});
         admin.MapGet("/posts",async(string? locale,int? page,int? pageSize,string? query,Guid? categoryId,string? status,IBlogRepository repo,BlogService service,CancellationToken ct)=>{
             var lang=locale??"pt";Locale(lang);var data=await repo.ListAsync(lang,Math.Clamp(page??1,1,100000),Math.Clamp(pageSize??20,1,100),query,categoryId,status,false,ct);
             var rows=new List<object>();foreach(var post in data.Items)rows.Add(await service.DtoAsync(post,false,false,ct));return Results.Ok(new{items=rows,data.Total,data.Page,data.PageSize});
@@ -43,7 +46,7 @@ public static class BlogEndpoints
         });
         admin.MapDelete("/posts/{id:guid}",async(Guid id,IBlogRepository repo,CancellationToken ct)=>{await repo.DeleteAsync(id,ct);return Results.NoContent();});
         admin.MapPost("/preview",async(string locale,BlogWriteRequest request,BlogService service,CancellationToken ct)=>{
-            Locale(locale);var item=Save(request);BlogPolicy.Validate(item with{Version=item.Version with{Status="draft"}},locale,DateTimeOffset.UtcNow);
+            Locale(locale);var item=await service.ResolveAuthorAsync(Save(request),ct);BlogPolicy.Validate(item with{Version=item.Version with{Status="draft"}},locale,DateTimeOffset.UtcNow);
             var content=await service.ContentAsync(item.Version,locale,false,ct);
             return Results.Ok(new{html=content.Html,products=content.Products});
         });

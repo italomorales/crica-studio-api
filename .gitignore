@@ -10,3 +10,4 @@ certbot/
 .blog-local/
 .blog-test-build/
 blog-frontend/
+.blog-author-build/

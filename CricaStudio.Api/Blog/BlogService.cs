@@ -22,8 +22,21 @@ public sealed class BlogService(IBlogRepository repository,TimeProvider time)
     public async Task<bool> ValidImageAsync(string url,CancellationToken ct) =>
         url.StartsWith("/assets/",StringComparison.Ordinal)&&!url.Contains("..")&&!url.Contains('\\')&&BlogDocument.SafeLink(url) ||
         (BlogDocument.SafeLink(url)&&await repository.ImageExistsAsync(url,ct));
+    public async Task<BlogSave> ResolveAuthorAsync(BlogSave item,CancellationToken ct)
+    {
+        if(item.AuthorId is not Guid authorId)return item;
+        var author=await repository.GetAuthorAsync(authorId,ct) ?? throw new BlogValidationException("Autor não encontrado.");
+        return item with{Author=author.Name};
+    }
+    public async Task<BlogAuthor> SaveAuthorAsync(BlogAuthor author,CancellationToken ct)
+    {
+        if(string.IsNullOrWhiteSpace(author.Name)||author.Name.Length>120||author.Bio is null||author.Bio.Length>600||author.Photo is null||author.Photo.Length>2000)throw new BlogValidationException("Preencha um nome de até 120 caracteres e uma apresentação de até 600 caracteres.");
+        if(author.Photo.Length>0&&!await ValidImageAsync(author.Photo,ct))throw new BlogValidationException("Envie a foto pela ferramenta de upload.");
+        return await repository.SaveAuthorAsync(author,ct);
+    }
     public async Task<BlogPost> SaveAsync(Guid? id,string locale,BlogSave item,CancellationToken ct)
     {
+        item=await ResolveAuthorAsync(item,ct);
         BlogPolicy.Validate(item,locale,time.GetUtcNow());
         if(item.Cover.Length>0&&!await ValidImageAsync(item.Cover,ct))throw new BlogValidationException("Envie a capa pela ferramenta de upload do blog.");
         await ContentAsync(item.Version,locale,item.Version.Status is "published" or "scheduled",ct);
@@ -39,6 +52,6 @@ public sealed class BlogService(IBlogRepository repository,TimeProvider time)
             versions[locale]=new {v.Title,v.Summary,v.Slug,v.Document,html=content.Item1,v.SeoTitle,v.SeoDescription,
                 status=publicOnly&&BlogPolicy.IsPublic(v,time.GetUtcNow())?"published":v.Status,v.PublishAt,v.PublishedAt,v.UpdatedAt};
         }
-        return new {post.Id,post.CategoryId,post.Category,post.Cover,post.Author,post.Date,post.Featured,post.UpdatedAt,versions,products=allProducts.DistinctBy(p=>(p.Kind,p.Id))};
+        return new {post.Id,post.CategoryId,post.Category,post.Cover,post.Author,post.AuthorId,post.AuthorProfile,post.Date,post.Featured,post.UpdatedAt,versions,products=allProducts.DistinctBy(p=>(p.Kind,p.Id))};
     }
 }

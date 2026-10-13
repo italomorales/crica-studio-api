@@ -17,15 +17,15 @@ public sealed class PostgresBlogRepository(string connectionString) : IBlogRepos
          FROM cricastudio.blog_versions v JOIN cricastudio.catalog_languages l ON l.code=v.language_code
          WHERE v.post_id=p.id {(publicOnly ? "AND l.is_active AND (" + Visible + ")" : "")})
         """;
-    private static string Columns(bool publicOnly, bool document) => $"p.id,p.category_id,c.name,p.cover_url,p.author,p.display_date,p.is_featured,p.updated_at,{Versions(publicOnly, document)}";
+    private static string Columns(bool publicOnly, bool document) => $"p.id,p.category_id,c.name,p.cover_url,COALESCE(a.name,p.author),p.display_date,p.is_featured,p.updated_at,{Versions(publicOnly, document)},p.author_id,COALESCE(a.photo_url,''),COALESCE(a.bio,''),COALESCE(a.is_active,false)";
     private static BlogPost Read(NpgsqlDataReader r) => new(r.GetGuid(0),r.GetGuid(1),r.GetString(2),r.GetString(3),r.GetString(4),
-        r.GetFieldValue<DateOnly>(5),r.GetBoolean(6),JsonSerializer.Deserialize<Dictionary<string,BlogVersion>>(r.GetString(8),Json)!,r.GetFieldValue<DateTimeOffset>(7));
+        r.GetFieldValue<DateOnly>(5),r.GetBoolean(6),JsonSerializer.Deserialize<Dictionary<string,BlogVersion>>(r.GetString(8),Json)!,r.GetFieldValue<DateTimeOffset>(7)){AuthorId=r.IsDBNull(9)?null:r.GetGuid(9),AuthorProfile=r.IsDBNull(9)?null:new BlogAuthor(r.GetGuid(9),r.GetString(4),r.GetString(10),r.GetString(11),r.GetBoolean(12))};
     private async Task<NpgsqlConnection> Open(CancellationToken ct) { var c = new NpgsqlConnection(connectionString); await c.OpenAsync(ct); return c; }
     private static void Nullable(NpgsqlCommand c,string name,NpgsqlDbType type,object? value) => c.Parameters.Add(name,type).Value=value??DBNull.Value;
     public async Task<BlogPage<BlogPost>> ListAsync(string locale,int page,int pageSize,string? query,Guid? categoryId,string? status,bool publicOnly,CancellationToken ct)
     {
         var where = $"""
-            FROM cricastudio.blog_posts p JOIN cricastudio.blog_categories c ON c.id=p.category_id
+            FROM cricastudio.blog_posts p JOIN cricastudio.blog_categories c ON c.id=p.category_id LEFT JOIN cricastudio.blog_authors a ON a.id=p.author_id
             LEFT JOIN cricastudio.blog_versions v ON v.post_id=p.id AND v.language_code=@locale
             WHERE (@category IS NULL OR p.category_id=@category)
              AND (@q='' OR v.search_document @@ websearch_to_tsquery('simple',@q) OR v.title ILIKE @contains ESCAPE '\')
@@ -49,7 +49,7 @@ public sealed class PostgresBlogRepository(string connectionString) : IBlogRepos
     public async Task<BlogPost?> GetAsync(Guid id,bool publicOnly,CancellationToken ct)
     {
         await using var conn=await Open(ct);
-        await using var cmd=new NpgsqlCommand($"SELECT {Columns(publicOnly,true)} FROM cricastudio.blog_posts p JOIN cricastudio.blog_categories c ON c.id=p.category_id WHERE p.id=@id {(publicOnly?"AND c.is_active":"")}",conn);
+        await using var cmd=new NpgsqlCommand($"SELECT {Columns(publicOnly,true)} FROM cricastudio.blog_posts p JOIN cricastudio.blog_categories c ON c.id=p.category_id LEFT JOIN cricastudio.blog_authors a ON a.id=p.author_id WHERE p.id=@id {(publicOnly?"AND c.is_active":"")}",conn);
         cmd.Parameters.AddWithValue("id",id); await using var r=await cmd.ExecuteReaderAsync(ct);
         if(!await r.ReadAsync(ct))return null; var post=Read(r); return publicOnly&&post.Versions.Count==0?null:post;
     }
@@ -67,11 +67,18 @@ public sealed class PostgresBlogRepository(string connectionString) : IBlogRepos
         await using var allowed=new NpgsqlCommand("SELECT EXISTS(SELECT 1 FROM cricastudio.blog_categories WHERE id=@category AND (@draft OR is_active)) AND EXISTS(SELECT 1 FROM cricastudio.catalog_languages WHERE code=@locale AND (@draft OR is_active))",conn,tx);
         allowed.Parameters.AddWithValue("category",item.CategoryId); allowed.Parameters.AddWithValue("locale",locale); allowed.Parameters.AddWithValue("draft",item.Version.Status is "draft" or "archived");
         if(!(bool)(await allowed.ExecuteScalarAsync(ct))!)throw new BlogValidationException("Categoria ou idioma inexistente/inativo para publicação.");
-        var sql=id is null? "INSERT INTO cricastudio.blog_posts(id,category_id,cover_url,author,display_date,is_featured) VALUES(@id,@category,@cover,@author,@date,@featured)" :
-            "UPDATE cricastudio.blog_posts SET category_id=@category,cover_url=@cover,author=@author,display_date=@date,is_featured=@featured,updated_at=CURRENT_TIMESTAMP WHERE id=@id";
+        if(item.AuthorId is Guid authorId)
+        {
+            await using var authorCheck=new NpgsqlCommand("SELECT name FROM cricastudio.blog_authors WHERE id=@authorId AND (is_active OR EXISTS(SELECT 1 FROM cricastudio.blog_posts WHERE id=@postId AND author_id=@authorId)) FOR KEY SHARE",conn,tx);
+            authorCheck.Parameters.AddWithValue("authorId",authorId);authorCheck.Parameters.AddWithValue("postId",postId);
+            var name=await authorCheck.ExecuteScalarAsync(ct) as string ?? throw new BlogValidationException("Selecione um autor ativo.");
+            item=item with{Author=name};
+        }
+        var sql=id is null? "INSERT INTO cricastudio.blog_posts(id,category_id,cover_url,author,author_id,display_date,is_featured) VALUES(@id,@category,@cover,@author,@authorId,@date,@featured)" :
+            "UPDATE cricastudio.blog_posts SET category_id=@category,cover_url=@cover,author=@author,author_id=@authorId,display_date=@date,is_featured=@featured,updated_at=CURRENT_TIMESTAMP WHERE id=@id";
         await using var metadata=new NpgsqlCommand(sql,conn,tx);
         metadata.Parameters.AddWithValue("id",postId); metadata.Parameters.AddWithValue("category",item.CategoryId);
-        metadata.Parameters.AddWithValue("cover",item.Cover); metadata.Parameters.AddWithValue("author",item.Author);
+        metadata.Parameters.AddWithValue("cover",item.Cover); metadata.Parameters.AddWithValue("author",item.Author);Nullable(metadata,"authorId",NpgsqlDbType.Uuid,item.AuthorId);
         metadata.Parameters.AddWithValue("date",item.Date); metadata.Parameters.AddWithValue("featured",item.Featured);
         if(await metadata.ExecuteNonQueryAsync(ct)==0)throw new BlogValidationException("Matéria não encontrada.");
         var v=item.Version;
@@ -137,7 +144,31 @@ public sealed class PostgresBlogRepository(string connectionString) : IBlogRepos
     public async Task<bool> ImageExistsAsync(string url,CancellationToken ct){await using var c=await Open(ct);await using var cmd=new NpgsqlCommand("SELECT EXISTS(SELECT 1 FROM cricastudio.blog_images WHERE url=@url)",c);cmd.Parameters.AddWithValue("url",url);return (bool)(await cmd.ExecuteScalarAsync(ct))!;}
     public async Task<IReadOnlyList<BlogPost>> SitemapAsync(CancellationToken ct)
     {
-        await using var c=await Open(ct);await using var cmd=new NpgsqlCommand($"SELECT {Columns(true,false)} FROM cricastudio.blog_posts p JOIN cricastudio.blog_categories c ON c.id=p.category_id WHERE c.is_active AND EXISTS(SELECT 1 FROM cricastudio.blog_versions v JOIN cricastudio.catalog_languages l ON l.code=v.language_code WHERE v.post_id=p.id AND l.is_active AND ({Visible})) ORDER BY p.id",c);
+        await using var c=await Open(ct);await using var cmd=new NpgsqlCommand($"SELECT {Columns(true,false)} FROM cricastudio.blog_posts p JOIN cricastudio.blog_categories c ON c.id=p.category_id LEFT JOIN cricastudio.blog_authors a ON a.id=p.author_id WHERE c.is_active AND EXISTS(SELECT 1 FROM cricastudio.blog_versions v JOIN cricastudio.catalog_languages l ON l.code=v.language_code WHERE v.post_id=p.id AND l.is_active AND ({Visible})) ORDER BY p.id",c);
         var rows=new List<BlogPost>();await using var r=await cmd.ExecuteReaderAsync(ct);while(await r.ReadAsync(ct))rows.Add(Read(r));return rows;
     }
+    private static BlogAuthor ReadAuthor(NpgsqlDataReader r)=>new(r.GetGuid(0),r.GetString(1),r.GetString(2),r.GetString(3),r.GetBoolean(4));
+    public async Task<IReadOnlyList<BlogAuthor>> AuthorsAsync(CancellationToken ct)
+    {
+        await using var c=await Open(ct);await using var cmd=new NpgsqlCommand("SELECT id,name,photo_url,bio,is_active FROM cricastudio.blog_authors ORDER BY name,id",c);
+        var rows=new List<BlogAuthor>();await using var r=await cmd.ExecuteReaderAsync(ct);while(await r.ReadAsync(ct))rows.Add(ReadAuthor(r));return rows;
+    }
+    public async Task<BlogAuthor?> GetAuthorAsync(Guid id,CancellationToken ct)
+    {
+        await using var c=await Open(ct);await using var cmd=new NpgsqlCommand("SELECT id,name,photo_url,bio,is_active FROM cricastudio.blog_authors WHERE id=@id",c);cmd.Parameters.AddWithValue("id",id);
+        await using var r=await cmd.ExecuteReaderAsync(ct);return await r.ReadAsync(ct)?ReadAuthor(r):null;
+    }
+    public async Task<BlogAuthor> SaveAuthorAsync(BlogAuthor item,CancellationToken ct)
+    {
+        var author=item with{Id=item.Id==Guid.Empty?Guid.NewGuid():item.Id,Name=item.Name.Trim(),Bio=item.Bio.Trim()};await using var c=await Open(ct);
+        await using var cmd=new NpgsqlCommand("INSERT INTO cricastudio.blog_authors(id,name,photo_url,bio,is_active) VALUES(@id,@name,@photo,@bio,@active) ON CONFLICT(id) DO UPDATE SET name=EXCLUDED.name,photo_url=EXCLUDED.photo_url,bio=EXCLUDED.bio,is_active=EXCLUDED.is_active,updated_at=CURRENT_TIMESTAMP",c);
+        cmd.Parameters.AddWithValue("id",author.Id);cmd.Parameters.AddWithValue("name",author.Name);cmd.Parameters.AddWithValue("photo",author.Photo);cmd.Parameters.AddWithValue("bio",author.Bio);cmd.Parameters.AddWithValue("active",author.Active);
+        try{await cmd.ExecuteNonQueryAsync(ct);}catch(PostgresException ex)when(ex.SqlState==PostgresErrorCodes.UniqueViolation){throw new BlogValidationException("Já existe um autor com este nome.");}return author;
+    }
+    public async Task DeleteAuthorAsync(Guid id,CancellationToken ct)
+    {
+        await using var c=await Open(ct);await using var cmd=new NpgsqlCommand("DELETE FROM cricastudio.blog_authors WHERE id=@id",c);cmd.Parameters.AddWithValue("id",id);
+        try{await cmd.ExecuteNonQueryAsync(ct);}catch(PostgresException ex)when(ex.SqlState is PostgresErrorCodes.ForeignKeyViolation or "23001"){throw new BlogValidationException("Este autor está vinculado a uma matéria. Desative-o ou altere o autor da matéria antes de excluir.");}
+    }
+
 }

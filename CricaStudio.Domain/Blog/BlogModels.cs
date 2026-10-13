@@ -6,10 +6,18 @@ public sealed record BlogCategory(Guid Id, string Name, string Slug, bool Active
 public sealed record BlogVersion(string Title, string Summary, string Slug, JsonElement Document, string SeoTitle,
     string SeoDescription, string Status, DateTimeOffset? PublishAt, DateTimeOffset? PublishedAt, DateTimeOffset UpdatedAt);
 public sealed record BlogPost(Guid Id, Guid CategoryId, string Category, string Cover, string Author, DateOnly Date,
-    bool Featured, Dictionary<string,BlogVersion> Versions, DateTimeOffset UpdatedAt);
+    bool Featured, Dictionary<string,BlogVersion> Versions, DateTimeOffset UpdatedAt)
+{
+    public Guid? AuthorId { get; init; }
+    public BlogAuthor? AuthorProfile { get; init; }
+}
+public sealed record BlogAuthor(Guid Id,string Name,string Photo,string Bio,bool Active);
 public sealed record BlogPage<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize);
 public sealed record BlogProduct(Guid Id, string Kind, string Name, string Description, string? Image, string Href, string Type);
-public sealed record BlogSave(Guid CategoryId, string Cover, string Author, DateOnly Date, bool Featured, BlogVersion Version);
+public sealed record BlogSave(Guid CategoryId, string Cover, string Author, DateOnly Date, bool Featured, BlogVersion Version)
+{
+    public Guid? AuthorId { get; init; }
+}
 public sealed class BlogValidationException(string message) : Exception(message);
 
 public interface IBlogRepository
@@ -27,4 +35,8 @@ public interface IBlogRepository
     Task RecordImageAsync(Guid id, string url, Guid? userId, CancellationToken ct);
     Task<bool> ImageExistsAsync(string url, CancellationToken ct);
     Task<IReadOnlyList<BlogPost>> SitemapAsync(CancellationToken ct);
+    Task<IReadOnlyList<BlogAuthor>> AuthorsAsync(CancellationToken ct);
+    Task<BlogAuthor?> GetAuthorAsync(Guid id,CancellationToken ct);
+    Task<BlogAuthor> SaveAuthorAsync(BlogAuthor item,CancellationToken ct);
+    Task DeleteAuthorAsync(Guid id,CancellationToken ct);
 }
