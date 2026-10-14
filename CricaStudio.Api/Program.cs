@@ -31,7 +31,8 @@ var catalogMediaOptions = builder.Configuration.GetSection(CatalogMediaOptions.S
 builder.Services.AddCors(options => options.AddPolicy("Frontend", policy => policy
     .WithOrigins(allowedOrigins)
     .AllowAnyHeader()
-    .AllowAnyMethod()));
+    .AllowAnyMethod()
+    .AllowCredentials()));
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -50,6 +51,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 builder.Services.AddAuthorization();
+builder.AddBlogSocial();
+builder.Services.AddScoped<PostgresBlogActivityRepository>(_=>new(databaseConnectionString??throw new InvalidOperationException("Banco não configurado.")));
 
 builder.Services.AddScoped<IAdminUserRepository>(_ => string.IsNullOrWhiteSpace(databaseConnectionString)
     ? throw new InvalidOperationException("Defina ConnectionStrings__Database no ambiente da API.")
@@ -78,6 +81,20 @@ builder.Services.AddHealthChecks();
 var app = builder.Build();
 
 app.UseCors("Frontend");
+// CloudFront overwrites the viewer host and supplies a private origin key. Never trust an unverified forwarded host.
+app.Use(async(context,next)=>{
+    var proxyKey=builder.Configuration["BlogSocial:ProxyKey"];
+    if(context.Request.Path.StartsWithSegments("/api/blog") && !string.IsNullOrEmpty(proxyKey)){
+        var incoming=context.Request.Headers["X-Crica-Proxy-Key"].ToString();
+        if(System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(proxyKey),Encoding.UTF8.GetBytes(incoming))){
+            var viewerHost=context.Request.Headers["X-Crica-Viewer-Host"].ToString();
+            if(BlogSocialAuthentication.AllowedOrigin("https://"+viewerHost,builder.Configuration)){
+                context.Request.Host=new HostString(viewerHost);context.Request.Scheme="https";
+            }
+        }
+    }
+    await next();
+});
 app.UseAuthentication();
 app.UseAuthorization();
 if (localBlogMedia)
@@ -113,6 +130,7 @@ app.MapAdminCatalogEndpoints();
 app.MapPlatformEndpoints();
 app.MapTranslationEndpoints();
 app.MapBlogEndpoints();
+app.MapBlogInteractions();
 app.MapBlogHtmlEndpoints();
 if (builder.Environment.IsEnvironment("BlogTest") && !string.IsNullOrWhiteSpace(builder.Configuration["Blog:FrontendDirectory"]))
 {

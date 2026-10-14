@@ -1,0 +1,57 @@
+// Writes only to the isolated loopback API started by start-blog-local.ps1.
+import assert from 'node:assert/strict';
+import {randomUUID} from 'node:crypto';
+const base='http://localhost:5031';let passed=0;
+async function call(path,{method='GET',body,cookie,token,status=200,header=true,origin}={}){
+ const headers={'Content-Type':'application/json'};if(header)headers['X-Crica-Interaction']='1';if(cookie)headers.Cookie=cookie;if(token)headers.Authorization='Bearer '+token;if(origin)headers.Origin=origin;
+ const response=await fetch(base+path,{method,headers,body:body===undefined?undefined:JSON.stringify(body),redirect:'manual'});const text=await response.text();
+ assert.equal(response.status,status,path+' '+text.slice(0,500));passed++;return {data:text&&response.headers.get('content-type')?.includes('json')?JSON.parse(text):text,cookie:response.headers.getSetCookie().map(v=>v.split(';')[0]).join('; ')};
+}
+const login=await call('/api/admin/auth/login',{method:'POST',body:{email:'blog-local@example.test',password:'CricaBlogLocal2026!'}});const token=login.data.accessToken;
+const post=(await call('/api/blog/posts/pt/autor-b7c99e8b')).data;const prefix='/api/blog/posts/'+post.id+'/pt';
+const otherPost=(await call('/api/blog/posts/pt/autor-cff0bd00')).data;
+const session=await call('/api/blog/auth/session');assert.equal(session.data.user,null);assert.deepEqual(session.data.providers,{google:false,facebook:false});
+await call('/api/blog/auth/start/google?returnUrl=https%3A%2F%2Fevil.example%2Fblog',{status:400});
+await call('/api/blog/auth/start/google?returnUrl='+encodeURIComponent(base+'/blog'),{status:503});
+await call(prefix+'/comments',{method:'POST',body:{text:'anonymous',parentId:null},status:401});
+await call(prefix+'/like',{method:'PUT',token,status:401});
+await call('/api/admin/blog/activity',{status:401});
+const suffix=randomUUID();const cookie=(await call('/api/blog/auth/test?subject='+suffix,{method:'POST'})).cookie;
+const secondCookie=(await call('/api/blog/auth/test?subject='+suffix+'-reply',{method:'POST'})).cookie;
+assert.ok(cookie.includes('crica.blog.visitor='));
+await call('/api/admin/blog/activity',{cookie,status:401});
+await call(prefix+'/comments',{method:'POST',cookie,header:false,body:{text:'csrf'},status:403});
+await call(prefix+'/comments',{method:'POST',cookie,origin:'https://evil.example',body:{text:'csrf'},status:403});
+await call(prefix+'/comments',{method:'POST',cookie,body:{text:'x'.repeat(1501)},status:400});
+await call(prefix+'/comments',{method:'POST',cookie,body:{text:'  '},status:400});
+const root=(await call(prefix+'/comments',{method:'POST',cookie,body:{text:'Comentário local '+suffix+' <script>alert(1)</script>',parentId:null,name:'Spoofed',status:'approved'}})).data;
+assert.equal(root.status,'pending');assert.equal(root.name,'Visitante de teste local');
+assert.ok(!(await call(prefix+'/comments')).data.items.some(row=>row.id===root.id));
+assert.ok((await call(prefix+'/comments',{cookie})).data.items.some(row=>row.id===root.id&&row.status==='pending'));
+await call(prefix+'/comments',{method:'POST',cookie,body:{text:'duplicate'},status:400});
+await call(prefix+'/comments',{method:'POST',cookie:secondCookie,body:{text:'Pending parent reply',parentId:root.id},status:400});
+async function moderate(id,status){return call('/api/admin/blog/activity/'+id,{method:'PUT',token,body:{status},status:204});}
+await moderate(root.id,'approved');assert.ok((await call(prefix+'/comments')).data.items.some(row=>row.id===root.id));
+await call('/api/blog/posts/'+otherPost.id+'/pt/comments',{method:'POST',cookie:secondCookie,body:{text:'Wrong post',parentId:root.id},status:400});
+await call('/api/blog/posts/'+post.id+'/en/comments',{method:'POST',cookie:secondCookie,body:{text:'Wrong language',parentId:root.id},status:400});
+const reply=(await call(prefix+'/comments',{method:'POST',cookie:secondCookie,body:{text:'Resposta local '+suffix,parentId:root.id}})).data;
+assert.equal(reply.status,'pending');assert.equal(reply.parentId,root.id);
+assert.ok(!(await call(prefix+'/comments')).data.items.some(row=>row.id===reply.id));
+assert.ok(!(await call(prefix+'/comments',{cookie})).data.items.some(row=>row.id===reply.id));
+assert.ok((await call(prefix+'/comments',{cookie:secondCookie})).data.items.some(row=>row.id===reply.id));
+await moderate(reply.id,'approved');assert.ok((await call(prefix+'/comments')).data.items.some(row=>row.id===reply.id));
+await moderate(root.id,'rejected');assert.ok(!(await call(prefix+'/comments')).data.items.some(row=>row.id===reply.id));
+await moderate(root.id,'approved');assert.ok((await call(prefix+'/comments')).data.items.some(row=>row.id===reply.id));
+const baseline=(await call(prefix+'/engagement')).data.likes;
+const like=(await call(prefix+'/like',{method:'PUT',cookie})).data;assert.equal(like.status,'pending');
+assert.equal((await call(prefix+'/like',{method:'PUT',cookie})).data.id,like.id);
+assert.equal((await call(prefix+'/engagement')).data.likes,baseline);assert.equal((await call(prefix+'/engagement',{cookie})).data.myLikeStatus,'pending');
+await moderate(like.id,'approved');assert.equal((await call(prefix+'/engagement')).data.likes,baseline+1);
+await moderate(like.id,'spam');assert.equal((await call(prefix+'/engagement')).data.likes,baseline);
+await call(prefix+'/like',{method:'DELETE',cookie,status:204});assert.equal((await call(prefix+'/engagement',{cookie})).data.myLikeStatus,null);
+const share=(await call(prefix+'/share',{method:'POST',cookie})).data;assert.equal(share.status,'pending');
+const queue=(await call('/api/admin/blog/activity?status=pending&kind=share',{token})).data;assert.ok(queue.items.some(row=>row.id===share.id));await moderate(share.id,'approved');
+await call('/api/admin/blog/activity/'+root.id,{method:'PUT',token,body:{status:'unsafe'},status:400});
+await call('/api/blog/posts/'+randomUUID()+'/pt/comments',{method:'POST',cookie,body:{text:'missing'},status:404});
+await call('/api/blog/auth/logout',{method:'POST',cookie,status:204});
+console.log(JSON.stringify({passed,rootId:root.id,replyId:reply.id,publicUrl:base+'/blog/pt/autor-b7c99e8b'}));
