@@ -46,6 +46,15 @@ public static class BlogHtmlEndpoints
         var avatar=!string.IsNullOrEmpty(photo)&&BlogDocument.SafeLink(photo)?$"<img class=\"blog-avatar blog-author-photo\" src=\"{E(photo)}\" alt=\"{E(post.Author)}\" width=\"60\" height=\"60\">":$"<span class=\"blog-avatar\" aria-hidden=\"true\">{E(post.Author.Length>0?post.Author[..1]:"C")}</span>";
         return $"<div class=\"blog-byline\">{avatar}<div><strong>{E(post.Author)}</strong><div class=\"blog-meta\"><time datetime=\"{post.Date:yyyy-MM-dd}\">{post.Date:dd/MM/yyyy}</time></div></div></div>";
     }
+    private static string AuthorAboutMarkup(BlogPost post,string locale)
+    {
+        if(post.AuthorProfile is not {} author)return "";
+        var label=locale=="en"?"About the author":locale=="es"?"Sobre el autor":"Sobre o autor";
+        var photo=!string.IsNullOrWhiteSpace(author.Photo)&&BlogDocument.SafeLink(author.Photo)
+            ?$"<img class=\"blog-author-card-photo\" src=\"{E(author.Photo)}\" alt=\"{E(author.Name)}\" width=\"72\" height=\"72\" loading=\"lazy\">"
+            :$"<span class=\"blog-author-card-photo blog-author-card-initial\" aria-hidden=\"true\">{E(author.Name.Length>0?author.Name[..1]:"")}</span>";
+        return $"<section class=\"blog-author-card\" aria-labelledby=\"blog-about-author-name\">{photo}<div class=\"blog-author-card-copy\"><span class=\"blog-author-card-label\">{label}</span><h2 id=\"blog-about-author-name\">{E(author.Name)}</h2>{(string.IsNullOrEmpty(author.Bio)?"":$"<p>{E(author.Bio)}</p>")}</div></section>";
+    }
     public static void MapBlogHtmlEndpoints(this WebApplication app)
     {
         var group=app.MapGroup("/blog").AddEndpointFilter<BlogEndpointFilter>();
@@ -81,7 +90,7 @@ public static class BlogHtmlEndpoints
             var extra=new StringBuilder($"<meta property=\"og:type\" content=\"article\"><meta property=\"og:image\" content=\"{E(post.Cover.StartsWith('/')?Site(config)+post.Cover:post.Cover)}\">");
             foreach(var (lang,version) in post.Versions)extra.Append($"<link data-blog-alternate=\"true\" rel=\"alternate\" hreflang=\"{E(lang)}\" href=\"{E(Site(config)+Path(lang,version))}\">");
             extra.Append("<script id=\"blog-article-schema\" type=\"application/ld+json\">"+JsonSerializer.Serialize(new Dictionary<string,object?>{{"@context","https://schema.org"},{"@type","Article"},{"headline",v.Title},{"description",v.Summary},{"image",post.Cover.StartsWith('/')?Site(config)+post.Cover:post.Cover},{"datePublished",v.PublishedAt??v.PublishAt},{"dateModified",v.UpdatedAt},{"inLanguage",locale},{"author",AuthorSchema(post,Site(config))},{"mainEntityOfPage",canonical}})+"</script>");
-            var body=$"<main id=\"main\" class=\"blog-page container\"><a class=\"back-link\" href=\"/blog?idioma={E(locale)}\">← Todas as histórias</a><article class=\"blog-article\"><header class=\"blog-article-heading\"><span class=\"eyebrow\">{E(post.Category)}</span><h1>{E(v.Title)}</h1><p class=\"blog-deck\">{E(v.Summary)}</p>{AuthorMarkup(post)}</header><figure class=\"blog-article-cover\"><img src=\"{E(post.Cover)}\" alt=\"{E(v.Title)}\"></figure><div class=\"blog-prose\">{content.Html}</div></article></main>";
+            var body=$"<main id=\"main\" class=\"blog-page container\"><a class=\"back-link\" href=\"/blog?idioma={E(locale)}\">← Todas as histórias</a><article class=\"blog-article\"><header class=\"blog-article-heading\"><span class=\"eyebrow\">{E(post.Category)}</span><h1>{E(v.Title)}</h1><p class=\"blog-deck\">{E(v.Summary)}</p>{AuthorMarkup(post)}</header><figure class=\"blog-article-cover\"><img src=\"{E(post.Cover)}\" alt=\"{E(v.Title)}\"></figure><div class=\"blog-prose\">{content.Html}</div></article>{AuthorAboutMarkup(post,locale)}</main>";
             http.Response.Headers.CacheControl="no-cache";
             return Results.Content(await Shell(config,locale,string.IsNullOrWhiteSpace(v.SeoTitle)?v.Title:v.SeoTitle,string.IsNullOrWhiteSpace(v.SeoDescription)?v.Summary:v.SeoDescription,canonical,body,extra.ToString(),true,ct),"text/html; charset=utf-8");
         });

@@ -25,14 +25,14 @@ const post=await call('/api/admin/blog/posts?locale=pt','POST',payload,201);asse
 await call('/api/admin/blog/posts/'+post.id+'/versions/en','PUT',{...payload,version:{...payload.version,title:'English author test',slug:'author-'+suffix}});
 const publicPost=await call('/api/blog/posts/pt/autor-'+suffix);assert.equal(publicPost.authorProfile.photo,photo);assert.equal(publicPost.authorProfile.bio,author.bio);
 const persisted=await call('/api/admin/blog/posts/'+post.id);assert.equal(persisted.authorId,id);assert.equal(persisted.versions.en.title,'English author test');
-const html=await call('/blog/pt/autor-'+suffix);assert.ok(html.includes('blog-avatar blog-author-photo'));assert.ok(html.includes('width="60" height="60"'));assert.ok(!html.includes(author.bio));assert.ok(html.includes('"@type":"Person","name":"'+author.name+'"'));
+const html=await call('/blog/pt/autor-'+suffix);assert.ok(html.includes('blog-avatar blog-author-photo'));assert.ok(html.includes('width="60" height="60"'));assert.ok(html.includes('blog-author-card'));assert.ok(html.includes(author.bio));assert.ok(html.indexOf('blog-author-card')>html.indexOf('</article>'));assert.ok(html.includes('"@type":"Person","name":"'+author.name+'"'));
 await call('/api/admin/blog/authors/'+id,'DELETE',undefined,400);
 const updated={...author,name:'Autor atualizado '+suffix,bio:'Sobre o autor: <script>texto simples</script>',active:false};
 await call('/api/admin/blog/authors/'+id,'PUT',updated);
 assert.equal((await call('/api/blog/posts/pt/autor-'+suffix)).author,updated.name);
 await call('/api/admin/blog/posts?locale=pt','POST',{...payload,version:{...payload.version,slug:'inactive-'+suffix}},400);
 await call('/api/admin/blog/posts/'+post.id+'/versions/pt','PUT',payload);
-const updatedHtml=await call('/blog/pt/autor-'+suffix);assert.ok(!updatedHtml.includes('blog-author-bio'));assert.ok(!updatedHtml.includes('texto simples'));
+const updatedHtml=await call('/blog/pt/autor-'+suffix);assert.ok(!updatedHtml.includes('blog-author-bio'));assert.ok(updatedHtml.includes('&lt;script&gt;texto simples&lt;/script&gt;'));assert.ok(!updatedHtml.includes('<script>texto simples</script>'));
 await call('/api/admin/blog/authors/'+id,'PUT',{...updated,active:true,bio:author.bio});
 const unused=randomUUID();await call('/api/admin/blog/authors/'+unused,'PUT',{name:'Autor descartavel '+suffix,photo:'',bio:'',active:true});await call('/api/admin/blog/authors/'+unused,'DELETE',undefined,204);
 assert.ok(!(await call('/api/admin/blog/authors')).some(a=>a.id===unused));
