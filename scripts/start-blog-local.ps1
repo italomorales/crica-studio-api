@@ -23,5 +23,13 @@ $env:Blog__FrontendDirectory = Join-Path (Split-Path $blogRoot -Parent) 'front/d
 $env:Blog__PublicSiteUrl = 'http://localhost:5031'
 $env:Cors__AllowedOrigins__0 = 'http://localhost:4174'
 $env:Cors__AllowedOrigins__1 = 'http://localhost:5031'
-$env:BlogSocial__EnableTestLogin = 'true'
+$googlePrivatePath=Join-Path $env:LOCALAPPDATA 'CricaStudio/Secrets/blog-google.json'
+if(Test-Path -LiteralPath $googlePrivatePath){
+    $googlePrivateConfig=Get-Content -LiteralPath $googlePrivatePath -Raw | ConvertFrom-Json
+    $env:BlogSocial__Google__ClientId=$googlePrivateConfig.BlogSocial.Google.ClientId
+    $env:BlogSocial__Google__ClientSecret=$googlePrivateConfig.BlogSocial.Google.ClientSecret
+    $env:BlogSocial__EnableTestLogin='false'
+}else{
+    $env:BlogSocial__EnableTestLogin='true'
+}
 Start-Process -FilePath 'dotnet' -ArgumentList @((Join-Path $blogRoot '.blog-build/CricaStudio.Api.dll')) -WorkingDirectory (Join-Path $blogRoot 'CricaStudio.Api') -WindowStyle Hidden -RedirectStandardOutput (Join-Path $blogLocal 'api.log') -RedirectStandardError (Join-Path $blogLocal 'api.err.log') -PassThru | Select-Object Id

@@ -18,6 +18,9 @@ var builder = WebApplication.CreateBuilder(args);
 if (builder.Environment.IsDevelopment())
 {
     builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+    var localSecrets = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+    if (!string.IsNullOrWhiteSpace(localSecrets))
+        builder.Configuration.AddJsonFile(Path.Combine(localSecrets, "CricaStudio", "Secrets", "blog-google.json"), optional: true, reloadOnChange: false);
 }
 
 var databaseConnectionString = builder.Configuration.GetConnectionString("Database");

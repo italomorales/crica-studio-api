@@ -61,8 +61,8 @@ public sealed class PostgresBlogActivityRepository(string connectionString)
             if(!(bool)(await check.ExecuteScalarAsync(ct))!)throw new BlogValidationException("Responda a um comentário aprovado desta matéria e idioma.");
         }
         var id=Guid.NewGuid();
-        await using(var insert=new NpgsqlCommand("INSERT INTO cricastudio.blog_activity(id,post_id,language_code,visitor_id,kind,text,parent_id) VALUES(@id,@post,@locale,@visitor,@kind,@text,@parent) ON CONFLICT(post_id,language_code,visitor_id) WHERE kind='like' DO NOTHING",conn,tx)){
-            insert.Parameters.AddWithValue("id",id);insert.Parameters.AddWithValue("post",post);insert.Parameters.AddWithValue("locale",locale);insert.Parameters.AddWithValue("visitor",visitor);insert.Parameters.AddWithValue("kind",kind);insert.Parameters.AddWithValue("text",text);Nullable(insert,"parent",NpgsqlDbType.Uuid,parent);await insert.ExecuteNonQueryAsync(ct);
+        await using(var insert=new NpgsqlCommand("INSERT INTO cricastudio.blog_activity(id,post_id,language_code,visitor_id,kind,text,parent_id,status) VALUES(@id,@post,@locale,@visitor,@kind,@text,@parent,@status) ON CONFLICT(post_id,language_code,visitor_id) WHERE kind='like' DO NOTHING",conn,tx)){
+            insert.Parameters.AddWithValue("id",id);insert.Parameters.AddWithValue("post",post);insert.Parameters.AddWithValue("locale",locale);insert.Parameters.AddWithValue("visitor",visitor);insert.Parameters.AddWithValue("kind",kind);insert.Parameters.AddWithValue("text",text);insert.Parameters.AddWithValue("status",kind=="comment"?"pending":"approved");Nullable(insert,"parent",NpgsqlDbType.Uuid,parent);await insert.ExecuteNonQueryAsync(ct);
         }
         await tx.CommitAsync(ct);
         await using var result=new NpgsqlCommand("SELECT "+Columns+Joins+" WHERE a.id=@id OR (a.post_id=@post AND a.language_code=@locale AND a.visitor_id=@visitor AND a.kind='like' AND @kind='like') LIMIT 1",conn);
@@ -72,7 +72,7 @@ public sealed class PostgresBlogActivityRepository(string connectionString)
     public async Task Unlike(Guid post,string locale,Guid visitor,CancellationToken ct){await using var conn=await Open(ct);await using var cmd=new NpgsqlCommand("DELETE FROM cricastudio.blog_activity WHERE post_id=@post AND language_code=@locale AND visitor_id=@visitor AND kind='like'",conn);cmd.Parameters.AddWithValue("post",post);cmd.Parameters.AddWithValue("locale",locale);cmd.Parameters.AddWithValue("visitor",visitor);await cmd.ExecuteNonQueryAsync(ct);}
     public async Task<BlogPage<BlogActivity>> Moderation(string status,string kind,int page,int pageSize,CancellationToken ct)
     {
-        await using var conn=await Open(ct);var where=" WHERE (@status='' OR a.status=@status) AND (@kind='' OR a.kind=@kind)";
+        await using var conn=await Open(ct);var where=" WHERE a.kind='comment' AND (@status='' OR a.status=@status) AND (@kind='' OR a.kind=@kind)";
         void Bind(NpgsqlCommand c){c.Parameters.AddWithValue("status",status);c.Parameters.AddWithValue("kind",kind);}
         await using var count=new NpgsqlCommand("SELECT count(*)::int FROM cricastudio.blog_activity a"+where,conn);Bind(count);var total=(int)(await count.ExecuteScalarAsync(ct))!;
         await using var cmd=new NpgsqlCommand("SELECT "+Columns+Joins+where+" ORDER BY a.created_at DESC,a.id LIMIT @limit OFFSET @offset",conn);Bind(cmd);cmd.Parameters.AddWithValue("limit",pageSize);cmd.Parameters.AddWithValue("offset",(page-1)*pageSize);
@@ -81,6 +81,6 @@ public sealed class PostgresBlogActivityRepository(string connectionString)
     public async Task<bool> Moderate(Guid id,string status,Guid? admin,CancellationToken ct)
     {
         if(status is not ("pending" or "approved" or "rejected" or "spam"))throw new BlogValidationException("Situação inválida.");
-        await using var conn=await Open(ct);await using var cmd=new NpgsqlCommand("UPDATE cricastudio.blog_activity SET status=@status,moderated_at=current_timestamp,moderated_by=@admin WHERE id=@id",conn);cmd.Parameters.AddWithValue("id",id);cmd.Parameters.AddWithValue("status",status);Nullable(cmd,"admin",NpgsqlDbType.Uuid,admin);return await cmd.ExecuteNonQueryAsync(ct)>0;
+        await using var conn=await Open(ct);await using var cmd=new NpgsqlCommand("UPDATE cricastudio.blog_activity SET status=@status,moderated_at=current_timestamp,moderated_by=@admin WHERE id=@id AND kind='comment'",conn);cmd.Parameters.AddWithValue("id",id);cmd.Parameters.AddWithValue("status",status);Nullable(cmd,"admin",NpgsqlDbType.Uuid,admin);return await cmd.ExecuteNonQueryAsync(ct)>0;
     }
 }

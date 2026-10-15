@@ -1,7 +1,7 @@
 // Writes only to the isolated loopback API started by start-blog-local.ps1.
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
-const base='http://localhost:5031';let passed=0;
+const base=process.env.BLOG_TEST_API_URL||'http://localhost:5031';assert.ok(['http://localhost:5031','http://localhost:5032'].includes(base));let passed=0;
 async function call(path,{method='GET',body,cookie,token,status=200,header=true,origin}={}){
  const headers={'Content-Type':'application/json'};if(header)headers['X-Crica-Interaction']='1';if(cookie)headers.Cookie=cookie;if(token)headers.Authorization='Bearer '+token;if(origin)headers.Origin=origin;
  const response=await fetch(base+path,{method,headers,body:body===undefined?undefined:JSON.stringify(body),redirect:'manual'});const text=await response.text();
@@ -43,14 +43,14 @@ await moderate(reply.id,'approved');assert.ok((await call(prefix+'/comments')).d
 await moderate(root.id,'rejected');assert.ok(!(await call(prefix+'/comments')).data.items.some(row=>row.id===reply.id));
 await moderate(root.id,'approved');assert.ok((await call(prefix+'/comments')).data.items.some(row=>row.id===reply.id));
 const baseline=(await call(prefix+'/engagement')).data.likes;
-const like=(await call(prefix+'/like',{method:'PUT',cookie})).data;assert.equal(like.status,'pending');
+const like=(await call(prefix+'/like',{method:'PUT',cookie})).data;assert.equal(like.status,'approved');
 assert.equal((await call(prefix+'/like',{method:'PUT',cookie})).data.id,like.id);
-assert.equal((await call(prefix+'/engagement')).data.likes,baseline);assert.equal((await call(prefix+'/engagement',{cookie})).data.myLikeStatus,'pending');
-await moderate(like.id,'approved');assert.equal((await call(prefix+'/engagement')).data.likes,baseline+1);
-await moderate(like.id,'spam');assert.equal((await call(prefix+'/engagement')).data.likes,baseline);
-await call(prefix+'/like',{method:'DELETE',cookie,status:204});assert.equal((await call(prefix+'/engagement',{cookie})).data.myLikeStatus,null);
-const share=(await call(prefix+'/share',{method:'POST',cookie})).data;assert.equal(share.status,'pending');
-const queue=(await call('/api/admin/blog/activity?status=pending&kind=share',{token})).data;assert.ok(queue.items.some(row=>row.id===share.id));await moderate(share.id,'approved');
+assert.equal((await call(prefix+'/engagement')).data.likes,baseline+1);assert.equal((await call(prefix+'/engagement',{cookie})).data.myLikeStatus,'approved');
+await call('/api/admin/blog/activity/'+like.id,{method:'PUT',token,body:{status:'spam'},status:404});assert.equal((await call(prefix+'/engagement')).data.likes,baseline+1);
+assert.equal((await call('/api/admin/blog/activity?kind=like',{token})).data.total,0);
+await call(prefix+'/like',{method:'DELETE',cookie,status:204});assert.equal((await call(prefix+'/engagement',{cookie})).data.myLikeStatus,null);assert.equal((await call(prefix+'/engagement')).data.likes,baseline);
+const share=(await call(prefix+'/share',{method:'POST',cookie})).data;assert.equal(share.status,'approved');
+const queue=(await call('/api/admin/blog/activity?kind=share',{token})).data;assert.equal(queue.total,0);await call('/api/admin/blog/activity/'+share.id,{method:'PUT',token,body:{status:'rejected'},status:404});
 await call('/api/admin/blog/activity/'+root.id,{method:'PUT',token,body:{status:'unsafe'},status:400});
 await call('/api/blog/posts/'+randomUUID()+'/pt/comments',{method:'POST',cookie,body:{text:'missing'},status:404});
 await call('/api/blog/auth/logout',{method:'POST',cookie,status:204});
