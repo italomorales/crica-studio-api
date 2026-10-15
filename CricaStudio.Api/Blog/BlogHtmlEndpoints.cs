@@ -27,14 +27,22 @@ public static class BlogHtmlEndpoints
     private static string Site(IConfiguration config,HttpContext http)
     {
         var origin=http.Request.Scheme+"://"+http.Request.Host;
-        return BlogSocialAuthentication.AllowedOrigin(origin,config)?origin:(config["Blog:PublicSiteUrl"]??"https://www.cricastudio.com.br").TrimEnd('/');
+        if(BlogSocialAuthentication.AllowedOrigin(origin,config))return origin;
+        // Public metadata may select another known site domain. Authentication still requires the private proxy key.
+        var viewerHost=http.Request.Headers["x-crica-viewer-host"].ToString().ToLowerInvariant();
+        if(viewerHost is "www.cricastudio.com.br" or "cricastudio.com.br" or "www.cricastudio.com" or "cricastudio.com")
+        {
+            var viewerOrigin="https://"+viewerHost;
+            if(BlogSocialAuthentication.AllowedOrigin(viewerOrigin,config))return viewerOrigin;
+        }
+        return (config["Blog:PublicSiteUrl"]??"https://www.cricastudio.com.br").TrimEnd('/');
     }
     public static string PageTitle(string title)=>Regex.Replace(title.Trim(),@"(?:\s*[|–—-]\s*Crica Studio)+\s*$","",RegexOptions.IgnoreCase).Trim()+" | Crica Studio";
     private static async Task<string> Shell(IConfiguration config,BlogFrontendShell frontend,string locale,string title,string description,string canonical,string body,string extra,bool indexable,CancellationToken ct)
     {
         var manifest=await frontend.GetAsync(ct);
         var source=manifest.Html;
-        var assets=string.Join("\n",Regex.Matches(source,"<script\\b[^>]*src=[^>]*></script>|<link\\b[^>]*(?:stylesheet|modulepreload)[^>]*>",RegexOptions.IgnoreCase).Select(m=>m.Value));
+        var assets=string.Join("\n",Regex.Matches(source,"<script\\b[^>]*>[\\s\\S]*?</script>|<link\\b[^>]*(?:stylesheet|modulepreload)[^>]*>",RegexOptions.IgnoreCase).Select(m=>m.Value));
         var css=manifest.Styles.Select(path=>$"<link rel=\"stylesheet\" href=\"{E(path)}\">");
         return $"<!doctype html><html lang=\"{E(locale)}\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><base href=\"/\"><title>{E(PageTitle(title))}</title><meta name=\"description\" content=\"{E(description)}\"><meta name=\"robots\" content=\"{(indexable?"index,follow":"noindex,nofollow")}\"><link rel=\"canonical\" href=\"{E(canonical)}\"><meta property=\"og:title\" content=\"{E(title)}\"><meta property=\"og:description\" content=\"{E(description)}\"><meta property=\"og:url\" content=\"{E(canonical)}\"><meta property=\"og:site_name\" content=\"Crica Studio\"><meta name=\"twitter:card\" content=\"summary_large_image\">{extra}{assets}{string.Join("",css)}</head><body><crica-app><header class=\"container\"><a href=\"/\"><img width=\"140\" src=\"/assets/crica-studio-logo-transparent.png\" alt=\"Crica Studio\"></a><nav><a href=\"/\">Home</a> · <a href=\"/blog\">News</a> · <a href=\"/loja\">Loja</a> · <a href=\"/fornecedores\">Fornecedores</a> · <a href=\"/vitrine\">Vitrines</a></nav></header>{body}</crica-app></body></html>";
     }
