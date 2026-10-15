@@ -17,7 +17,7 @@ WORKDIR /app
 ENV ASPNETCORE_HTTP_PORTS=8080
 EXPOSE 8080
 USER $APP_UID
-RUN mkdir -p /home/app/.aspnet/DataProtection-Keys
+RUN mkdir -p /home/app/.aspnet/DataProtection-Keys && chmod 700 /home/app/.aspnet/DataProtection-Keys
 
 COPY --from=build /app/publish ./
 ENTRYPOINT ["dotnet", "CricaStudio.Api.dll"]
