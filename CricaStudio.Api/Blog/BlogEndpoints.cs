@@ -13,6 +13,7 @@ public sealed class BlogEndpointFilter : IEndpointFilter
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context,EndpointFilterDelegate next)
     {
         try{return await next(context);}
+        catch(BlogFrontendUnavailableException){return Results.Problem(title:"A apresentação do News está temporariamente indisponível.",statusCode:503);}
         catch(BlogValidationException ex){return Results.ValidationProblem(new Dictionary<string,string[]>{{"blog",[ex.Message]}});}
         catch(CatalogMediaValidationException ex){return Results.ValidationProblem(new Dictionary<string,string[]>{{"file",[ex.Message]}});}
         catch(System.Text.Json.JsonException){return Results.ValidationProblem(new Dictionary<string,string[]>{{"content",["Conteúdo JSON inválido."]}});}

@@ -71,6 +71,9 @@ builder.Services.AddScoped<ICatalogMediaStorage, S3CatalogMediaStorage>();
 var localBlogMedia = (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("BlogTest")) && catalogMediaOptions.Provider == "local" && !string.IsNullOrWhiteSpace(catalogMediaOptions.LocalDirectory);
 if (localBlogMedia) builder.Services.AddScoped<ICatalogMediaStorage, LocalBlogMediaStorage>();
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddHttpClient("BlogFrontendShell", client => client.Timeout = TimeSpan.FromSeconds(8))
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+builder.Services.AddSingleton<BlogFrontendShell>();
 builder.Services.AddScoped<IBlogRepository>(_ => new PostgresBlogRepository(databaseConnectionString ?? throw new InvalidOperationException("Banco não configurado.")));
 builder.Services.AddScoped<BlogService>();
 builder.Services.AddSingleton<IPasswordHasher, Pbkdf2PasswordHasher>();
@@ -87,7 +90,7 @@ app.UseCors("Frontend");
 // CloudFront overwrites the viewer host and supplies a private origin key. Never trust an unverified forwarded host.
 app.Use(async(context,next)=>{
     var proxyKey=builder.Configuration["BlogSocial:ProxyKey"];
-    if(context.Request.Path.StartsWithSegments("/api/blog") && !string.IsNullOrEmpty(proxyKey)){
+    if((context.Request.Path.StartsWithSegments("/api/blog") || context.Request.Path.StartsWithSegments("/blog") || context.Request.Path=="/blog-sitemap.xml") && !string.IsNullOrEmpty(proxyKey)){
         var incoming=context.Request.Headers["X-Crica-Proxy-Key"].ToString();
         if(System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(proxyKey),Encoding.UTF8.GetBytes(incoming))){
             var viewerHost=context.Request.Headers["X-Crica-Viewer-Host"].ToString();

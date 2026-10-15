@@ -17,6 +17,8 @@ services:
       CatalogMedia__PublicBaseUrl: ${CATALOG_MEDIA_PUBLIC_BASE_URL:-}
       Blog__FrontendDirectory: /app/blog-frontend
       Blog__PublicSiteUrl: ${BLOG_PUBLIC_SITE_URL:-https://www.cricastudio.com.br}
+      Blog__FrontendShellUrl: ${BLOG_FRONTEND_SHELL_URL:-https://www.cricastudio.com.br/blog-shell.json}
+      BlogSocial__ProxyKey: ${BLOG_SOCIAL_PROXY_KEY:-}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
     restart: unless-stopped
