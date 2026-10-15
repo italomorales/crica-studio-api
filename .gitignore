@@ -4,6 +4,8 @@ obj/
 .idea/
 *.user
 *.suo
+.env
+.env.*
 appsettings.Local.json
 certbot/
 .blog-build/
