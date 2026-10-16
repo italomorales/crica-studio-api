@@ -40,7 +40,7 @@ public sealed class PostgresBlogRepository(string connectionString) : IBlogRepos
         }
         await using var count = new NpgsqlCommand("SELECT count(*)::int "+where,conn); Bind(count);
         var total=(int)(await count.ExecuteScalarAsync(ct))!;
-        await using var command = new NpgsqlCommand($"SELECT {Columns(publicOnly,false)} {where} ORDER BY p.is_featured DESC,COALESCE(v.published_at,v.publish_at,p.created_at) DESC,p.id LIMIT @limit OFFSET @offset",conn);
+        await using var command = new NpgsqlCommand($"SELECT {Columns(publicOnly,true)} {where} ORDER BY p.is_featured DESC,COALESCE(v.published_at,v.publish_at,p.created_at) DESC,p.id LIMIT @limit OFFSET @offset",conn);
         Bind(command); command.Parameters.AddWithValue("limit",pageSize); command.Parameters.AddWithValue("offset",(page-1)*pageSize);
         var items=new List<BlogPost>(); await using var reader=await command.ExecuteReaderAsync(ct);
         while(await reader.ReadAsync(ct)) items.Add(Read(reader));
