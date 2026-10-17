@@ -18,7 +18,7 @@ public sealed class BlogService(IBlogRepository repository,TimeProvider time)
         if(validateReferences&&products.Count!=shop.Length+platforms.Length)throw new BlogValidationException("Um produto associado foi removido ou não está publicado.");
         if(validateReferences)foreach(var image in nodes.Where(n=>n.GetProperty("type").GetString()=="image"))
             if(!await ValidImageAsync(BlogDocument.Attr(image,"src")!,ct))throw new BlogValidationException("Envie as imagens pela ferramenta de upload do blog.");
-        return (BlogDocument.Render(version.Document,products),products);
+        return (BlogDocument.Render(version.Document,products,locale),products);
     }
     public async Task<bool> ValidImageAsync(string url,CancellationToken ct) =>
         url.StartsWith("/assets/",StringComparison.Ordinal)&&!url.Contains("..")&&!url.Contains('\\')&&BlogDocument.SafeLink(url) ||
@@ -53,6 +53,6 @@ public sealed class BlogService(IBlogRepository repository,TimeProvider time)
             versions[locale]=new {v.Title,v.Summary,v.Slug,document=detail?v.Document:EmptyDocument,html=content.Item1,readingMinutes=BlogReadingTime.Minutes(v.Document),v.SeoTitle,v.SeoDescription,
                 status=publicOnly&&BlogPolicy.IsPublic(v,time.GetUtcNow())?"published":v.Status,v.PublishAt,v.PublishedAt,v.UpdatedAt};
         }
-        return new {post.Id,post.CategoryId,post.Category,post.Cover,post.Author,post.AuthorId,post.AuthorProfile,post.Date,post.Featured,post.UpdatedAt,versions,products=allProducts.DistinctBy(p=>(p.Kind,p.Id))};
+        return new {post.Id,post.CategoryId,post.Category,post.CategoryTranslations,post.Cover,post.Author,post.AuthorId,post.AuthorProfile,post.Date,post.Featured,post.UpdatedAt,versions,products=allProducts.DistinctBy(p=>(p.Kind,p.Id))};
     }
 }

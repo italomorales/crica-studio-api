@@ -42,7 +42,7 @@ public static class BlogDocument
         yield return node;
         if(node.TryGetProperty("content",out var children)&&children.ValueKind==JsonValueKind.Array)foreach(var child in children.EnumerateArray())foreach(var nested in Walk(child))yield return nested;
     }
-    public static string Render(JsonElement document,IReadOnlyList<BlogProduct> products)
+    public static string Render(JsonElement document,IReadOnlyList<BlogProduct> products,string locale="pt")
     {
         string Node(JsonElement node)
         {
@@ -64,7 +64,7 @@ public static class BlogDocument
             {
                 var product=products.FirstOrDefault(p=>p.Id.ToString()==Attr(node,"id")&&p.Kind==Attr(node,"kind"));
                 if(product is null || !SafeLink(product.Href))return "";
-                return $"<aside class=\"blog-product-card\" data-blog-product=\"{product.Id}\" data-kind=\"{product.Kind}\"><img src=\"{Encode(SafeLink(product.Image)?product.Image:"/assets/crica-studio-logo-transparent.png")}\" alt=\"{Encode(product.Name)}\"><div><small>{Encode(product.Type)}</small><h3>{Encode(product.Name)}</h3><p>{Encode(product.Description)}</p><a href=\"{Encode(product.Href)}\"{(product.Kind=="platform"?" target=\"_blank\" rel=\"sponsored noopener noreferrer\"":"")}>Ver produto →</a></div></aside>";
+                return $"<aside class=\"blog-product-card\" data-blog-product=\"{product.Id}\" data-kind=\"{product.Kind}\"><img src=\"{Encode(SafeLink(product.Image)?product.Image:"/assets/crica-studio-logo-transparent.png")}\" alt=\"{Encode(product.Name)}\"><div><small>{Encode(BlogPublicCopy.Text(product.Type,locale))}</small><h3>{Encode(product.Name)}</h3><p>{Encode(product.Description)}</p><a href=\"{Encode(product.Href)}\"{(product.Kind=="platform"?" target=\"_blank\" rel=\"sponsored noopener noreferrer\"":"")}>{BlogPublicCopy.Text("Ver produto",locale)} →</a></div></aside>";
             }
             var element=type switch{"paragraph"=>"p","heading"=>Attr(node,"level")=="3"?"h3":"h2","bulletList"=>"ul","orderedList"=>"ol","listItem"=>"li","blockquote"=>"blockquote","codeBlock"=>"pre",_=>null};
             return type switch {"hardBreak"=>"<br>","horizontalRule"=>"<hr>",_=>element is null?inner:$"<{element}>{inner}</{element}>"};

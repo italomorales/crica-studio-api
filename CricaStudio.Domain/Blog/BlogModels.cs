@@ -10,6 +10,7 @@ public sealed record BlogPost(Guid Id, Guid CategoryId, string Category, string 
 {
     public Guid? AuthorId { get; init; }
     public BlogAuthor? AuthorProfile { get; init; }
+    public Dictionary<string,string> CategoryTranslations { get; init; } = [];
 }
 public sealed record BlogAuthor(Guid Id,string Name,string Photo,string Bio,bool Active);
 public sealed record BlogPage<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize);

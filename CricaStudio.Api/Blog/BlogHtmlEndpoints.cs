@@ -11,6 +11,8 @@ namespace CricaStudio.Api.Blog;
 public static class BlogHtmlEndpoints
 {
     private static string E(string? s)=>BlogDocument.Encode(s);
+    private static string Copy(string locale,string text)=>E(BlogPublicCopy.Text(text,locale));
+    private static string Category(BlogPost post,string locale)=>Copy(locale,post.CategoryTranslations.GetValueOrDefault(locale,post.Category));
     private static string Path(string locale,BlogVersion v)=>$"/blog/{locale}/{v.Slug}";
     private static string ListingLocale(HttpContext http,IConfiguration config)
     {
@@ -65,7 +67,7 @@ public static class BlogHtmlEndpoints
         var photo=!string.IsNullOrWhiteSpace(author.Photo)&&BlogDocument.SafeLink(author.Photo)
             ?$"<img class=\"blog-author-card-photo\" src=\"{E(author.Photo)}\" alt=\"{E(author.Name)}\" width=\"72\" height=\"72\" loading=\"lazy\">"
             :$"<span class=\"blog-author-card-photo blog-author-card-initial\" aria-hidden=\"true\">{E(author.Name.Length>0?author.Name[..1]:"")}</span>";
-        return $"<section class=\"blog-author-card\" aria-labelledby=\"blog-about-author-name\">{photo}<div class=\"blog-author-card-copy\"><span class=\"blog-author-card-label\">{label}</span><h2 id=\"blog-about-author-name\">{E(author.Name)}</h2>{(string.IsNullOrEmpty(author.Bio)?"":$"<p>{E(author.Bio)}</p>")}</div></section>";
+        return $"<section class=\"blog-author-card\" aria-labelledby=\"blog-about-author-name\">{photo}<div class=\"blog-author-card-copy\"><span class=\"blog-author-card-label\">{label}</span><h2 id=\"blog-about-author-name\">{E(author.Name)}</h2>{(string.IsNullOrEmpty(author.Bio)?"":$"<p>{Copy(locale,author.Bio)}</p>")}</div></section>";
     }
     public static void MapBlogHtmlEndpoints(this WebApplication app)
     {
@@ -78,20 +80,20 @@ public static class BlogHtmlEndpoints
             var categoryId=Guid.TryParse(http.Request.Query["categoria"],out var cat)?(Guid?)cat:null;
             var data=await repo.ListAsync(locale,page,6,query,categoryId,null,true,ct);
             var categories=await repo.CategoriesAsync(true,ct);
-            var body=new StringBuilder("<main id=\"main\" class=\"blog-page container\"><header class=\"blog-intro\"><span class=\"eyebrow\">CRICA NEWS</span><h1>Entre uma ideia<br>e <span>outra.</span></h1><p>Inspiração, histórias e detalhes para criar algo que tenha a sua essência.</p></header>");
-            body.Append($"<form class=\"blog-search\" action=\"/blog\"><input type=\"hidden\" name=\"idioma\" value=\"{E(locale)}\"><label>Buscar matérias<input name=\"q\" value=\"{E(query)}\" type=\"search\"></label><button>Buscar</button></form><nav class=\"blog-categories\"><a href=\"/blog?idioma={E(locale)}\">Todas</a>");
-            foreach(var c in categories)body.Append($"<a href=\"/blog?idioma={E(locale)}&amp;categoria={c.Id}\">{E(c.Translations.GetValueOrDefault(locale,c.Name))}</a>");
-            body.Append($"</nav><p>{data.Total} matérias</p><section class=\"blog-feed blog-grid\">");
-            foreach(var post in data.Items){var v=post.Versions[locale];body.Append($"<a class=\"blog-card\" href=\"{E(Path(locale,v))}\"><div class=\"blog-cover\"><img src=\"{E(post.Cover)}\" alt=\"{E(v.Title)}\" loading=\"lazy\"></div><div class=\"blog-card-copy\"><span class=\"eyebrow\">{E(post.Category)}</span><h2>{E(v.Title)}</h2><p>{E(v.Summary)}</p><time datetime=\"{post.Date:yyyy-MM-dd}\">{post.Date:dd/MM/yyyy}</time></div></a>");}
-            if(data.Total==0)body.Append("<p>Nenhuma matéria encontrada.</p>");
+            var body=new StringBuilder($"<main id=\"main\" class=\"blog-page container\"><header class=\"blog-intro\"><span class=\"eyebrow\">CRICA NEWS</span><h1>{Copy(locale,"Entre uma ideia")}<br><span>{Copy(locale,"e outra.")}</span></h1><p>{Copy(locale,"Inspiração, histórias e detalhes para criar algo que tenha a sua essência.")}</p></header>");
+            body.Append($"<form class=\"blog-search\" action=\"/blog\"><input type=\"hidden\" name=\"idioma\" value=\"{E(locale)}\"><label>{Copy(locale,"Buscar matérias")}<input name=\"q\" value=\"{E(query)}\" type=\"search\"></label><button>{Copy(locale,"Buscar")}</button></form><nav class=\"blog-categories\"><a href=\"/blog?idioma={E(locale)}\">{Copy(locale,"Todas")}</a>");
+            foreach(var c in categories)body.Append($"<a href=\"/blog?idioma={E(locale)}&amp;categoria={c.Id}\">{Copy(locale,c.Translations.GetValueOrDefault(locale,c.Name))}</a>");
+            body.Append("</nav><section class=\"blog-feed blog-grid\">");
+            foreach(var post in data.Items){var v=post.Versions[locale];body.Append($"<a class=\"blog-card\" href=\"{E(Path(locale,v))}\"><div class=\"blog-cover\"><img src=\"{E(post.Cover)}\" alt=\"{E(v.Title)}\" loading=\"lazy\"></div><div class=\"blog-card-copy\"><span class=\"eyebrow\">{Category(post,locale)}</span><h2>{E(v.Title)}</h2><p>{E(v.Summary)}</p><time datetime=\"{post.Date:yyyy-MM-dd}\">{post.Date:dd/MM/yyyy}</time></div></a>");}
+            if(data.Total==0)body.Append($"<p>{Copy(locale,"Nenhuma matéria encontrada.")}</p>");
             body.Append("</section><nav class=\"blog-pagination\">");
             string Page(int n)=>$"/blog?idioma={locale}&amp;pagina={n}&amp;q={Uri.EscapeDataString(query)}"+(categoryId.HasValue?$"&amp;categoria={categoryId}":"");
-            if(page>1)body.Append($"<a href=\"{Page(page-1)}\">← Anterior</a>");
-            if(page*6<data.Total)body.Append($"<a href=\"{Page(page+1)}\">Próxima →</a>");
+            if(page>1)body.Append($"<a href=\"{Page(page-1)}\">← {Copy(locale,"Anterior")}</a>");
+            if(page*6<data.Total)body.Append($"<a href=\"{Page(page+1)}\">{Copy(locale,"Próxima")} →</a>");
             body.Append("</nav></main>");
             http.Response.Headers.CacheControl="no-cache";
             http.Response.Headers.Vary="Accept-Language, Host";
-            return Results.Content(await Shell(config,frontend,locale,"Crica News","Inspiração e histórias da Crica Studio.",Site(config,http)+"/blog"+(locale=="pt"?"":$"?idioma={locale}"),body.ToString(),"",query.Length==0&&categoryId is null&&page==1,ct),"text/html; charset=utf-8");
+            return Results.Content(await Shell(config,frontend,locale,"Crica News",BlogPublicCopy.Text("Inspiração e histórias da Crica Studio.",locale),Site(config,http)+"/blog"+(locale=="pt"?"":$"?idioma={locale}"),body.ToString(),"",query.Length==0&&categoryId is null&&page==1,ct),"text/html; charset=utf-8");
         });
         group.MapGet("/{locale}/{slug}",async(string locale,string slug,HttpContext http,IConfiguration config,BlogFrontendShell frontend,IBlogRepository repo,BlogService service,CancellationToken ct)=>{
             if(!BlogPolicy.ValidLocale(locale))return Results.NotFound();
@@ -102,7 +104,7 @@ public static class BlogHtmlEndpoints
             var extra=new StringBuilder($"<meta property=\"og:type\" content=\"article\"><meta property=\"og:image\" content=\"{E(post.Cover.StartsWith('/')?Site(config,http)+post.Cover:post.Cover)}\">");
             foreach(var (lang,version) in post.Versions)extra.Append($"<link data-blog-alternate=\"true\" rel=\"alternate\" hreflang=\"{E(lang)}\" href=\"{E(Site(config,http)+Path(lang,version))}\">");
             extra.Append("<script id=\"blog-article-schema\" type=\"application/ld+json\">"+JsonSerializer.Serialize(new Dictionary<string,object?>{{"@context","https://schema.org"},{"@type","Article"},{"headline",v.Title},{"description",v.Summary},{"image",post.Cover.StartsWith('/')?Site(config,http)+post.Cover:post.Cover},{"datePublished",v.PublishedAt??v.PublishAt},{"dateModified",v.UpdatedAt},{"inLanguage",locale},{"author",AuthorSchema(post,Site(config,http))},{"mainEntityOfPage",canonical}})+"</script>");
-            var body=$"<main id=\"main\" class=\"blog-page container\"><a class=\"back-link\" href=\"/blog?idioma={E(locale)}\">← Todas as histórias</a><article class=\"blog-article\"><header class=\"blog-article-heading\"><span class=\"eyebrow\">{E(post.Category)}</span><h1>{E(v.Title)}</h1><p class=\"blog-deck\">{E(v.Summary)}</p>{AuthorMarkup(post)}</header><figure class=\"blog-article-cover\"><img src=\"{E(post.Cover)}\" alt=\"{E(v.Title)}\"></figure><div class=\"blog-prose\">{content.Html}</div></article>{AuthorAboutMarkup(post,locale)}</main>";
+            var body=$"<main id=\"main\" class=\"blog-page container\"><a class=\"back-link\" href=\"/blog?idioma={E(locale)}\">← {Copy(locale,"Todas as histórias")}</a><article class=\"blog-article\"><header class=\"blog-article-heading\"><span class=\"eyebrow\">{Category(post,locale)}</span><h1>{E(v.Title)}</h1><p class=\"blog-deck\">{E(v.Summary)}</p>{AuthorMarkup(post)}</header><figure class=\"blog-article-cover\"><img src=\"{E(post.Cover)}\" alt=\"{E(v.Title)}\"></figure><div class=\"blog-prose\">{content.Html}</div></article>{AuthorAboutMarkup(post,locale)}</main>";
             http.Response.Headers.CacheControl="no-cache";
             return Results.Content(await Shell(config,frontend,locale,string.IsNullOrWhiteSpace(v.SeoTitle)?v.Title:v.SeoTitle,string.IsNullOrWhiteSpace(v.SeoDescription)?v.Summary:v.SeoDescription,canonical,body,extra.ToString(),true,ct),"text/html; charset=utf-8");
         });

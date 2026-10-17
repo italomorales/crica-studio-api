@@ -17,9 +17,9 @@ public sealed class PostgresBlogRepository(string connectionString) : IBlogRepos
          FROM cricastudio.blog_versions v JOIN cricastudio.catalog_languages l ON l.code=v.language_code
          WHERE v.post_id=p.id {(publicOnly ? "AND l.is_active AND (" + Visible + ")" : "")})
         """;
-    private static string Columns(bool publicOnly, bool document) => $"p.id,p.category_id,c.name,p.cover_url,COALESCE(a.name,p.author),p.display_date,p.is_featured,p.updated_at,{Versions(publicOnly, document)},p.author_id,COALESCE(a.photo_url,''),COALESCE(a.bio,''),COALESCE(a.is_active,false)";
+    private static string Columns(bool publicOnly, bool document) => $"p.id,p.category_id,c.name,p.cover_url,COALESCE(a.name,p.author),p.display_date,p.is_featured,p.updated_at,{Versions(publicOnly, document)},p.author_id,COALESCE(a.photo_url,''),COALESCE(a.bio,''),COALESCE(a.is_active,false),COALESCE(c.translations,'{{}}'::jsonb)";
     private static BlogPost Read(NpgsqlDataReader r) => new(r.GetGuid(0),r.GetGuid(1),r.GetString(2),r.GetString(3),r.GetString(4),
-        r.GetFieldValue<DateOnly>(5),r.GetBoolean(6),JsonSerializer.Deserialize<Dictionary<string,BlogVersion>>(r.GetString(8),Json)!,r.GetFieldValue<DateTimeOffset>(7)){AuthorId=r.IsDBNull(9)?null:r.GetGuid(9),AuthorProfile=r.IsDBNull(9)?null:new BlogAuthor(r.GetGuid(9),r.GetString(4),r.GetString(10),r.GetString(11),r.GetBoolean(12))};
+        r.GetFieldValue<DateOnly>(5),r.GetBoolean(6),JsonSerializer.Deserialize<Dictionary<string,BlogVersion>>(r.GetString(8),Json)!,r.GetFieldValue<DateTimeOffset>(7)){AuthorId=r.IsDBNull(9)?null:r.GetGuid(9),AuthorProfile=r.IsDBNull(9)?null:new BlogAuthor(r.GetGuid(9),r.GetString(4),r.GetString(10),r.GetString(11),r.GetBoolean(12)),CategoryTranslations=JsonSerializer.Deserialize<Dictionary<string,string>>(r.GetString(13),Json)!};
     private async Task<NpgsqlConnection> Open(CancellationToken ct) { var c = new NpgsqlConnection(connectionString); await c.OpenAsync(ct); return c; }
     private static void Nullable(NpgsqlCommand c,string name,NpgsqlDbType type,object? value) => c.Parameters.Add(name,type).Value=value??DBNull.Value;
     public async Task<BlogPage<BlogPost>> ListAsync(string locale,int page,int pageSize,string? query,Guid? categoryId,string? status,bool publicOnly,CancellationToken ct)
