@@ -136,6 +136,11 @@ public static class AdminCatalogEndpoints
         group.MapDelete("/products/{id:guid}", async (Guid id, ICatalogWriteRepository repo, CancellationToken ct) => { await repo.DeleteShopProductAsync(id,ct); return Results.NoContent(); });
         group.MapPost("/affiliates", (AffiliateRequest request, ICatalogWriteRepository repo, IPlatformRepository platforms, CatalogReadService catalog, CancellationToken ct) => SaveAffiliate(request, Guid.Empty, repo, platforms, catalog, ct));
         group.MapPut("/affiliates/{id:guid}", (Guid id, AffiliateRequest request, ICatalogWriteRepository repo, IPlatformRepository platforms, CatalogReadService catalog, CancellationToken ct) => SaveAffiliate(request, id, repo, platforms, catalog, ct));
+        group.MapPatch("/affiliates/{id:guid}/management", async(Guid id, SupplierManagementEditRequest request, ICatalogWriteRepository repo, CancellationToken ct) => {
+            if(!TrySupplierManagementChange(request,out var change))
+                return Results.ValidationProblem(new Dictionary<string,string[]> { ["management"] = ["Informe um preço não negativo com até duas casas decimais ou uma situação válida."] });
+            return await repo.UpdateSupplierManagementAsync(id,change!,ct) ? Results.NoContent() : Results.NotFound();
+        });
         group.MapDelete("/affiliates/{id:guid}", async (Guid id, ICatalogWriteRepository repo, CancellationToken ct) => { await repo.DeleteAffiliateProductAsync(id,ct); return Results.NoContent(); });
         group.MapPut("/settings", async (SettingsRequest request, ICatalogWriteRepository repo, CancellationToken ct) => { if (!string.IsNullOrEmpty(request.WhatsappNumber) && !System.Text.RegularExpressions.Regex.IsMatch(request.WhatsappNumber,"^[1-9]\\d{7,14}$")) return Results.ValidationProblem(new Dictionary<string,string[]> { ["whatsappNumber"]=["Informe somente dígitos do número internacional."] }); await repo.SaveSettingsAsync(new CatalogSettings(request.WhatsappNumber),ct); return Results.NoContent(); });
     }
@@ -223,6 +228,15 @@ public static class AdminCatalogEndpoints
         return Results.Ok(new { id = affiliate.Id });
     }
 
+    internal static bool TrySupplierManagementChange(SupplierManagementEditRequest request,out SupplierManagementChange? change)
+    {
+        change=null;
+        if(request.Field=="lastStorePrice") {
+            if(request.Value.ValueKind==System.Text.Json.JsonValueKind.Null) change=new(request.Field);
+            else if(request.Value.ValueKind==System.Text.Json.JsonValueKind.Number && request.Value.TryGetDecimal(out var price)) change=new(request.Field,price);
+        } else if(request.Value.ValueKind==System.Text.Json.JsonValueKind.String) change=new(request.Field,Status:request.Value.GetString());
+        return change?.IsValid()==true;
+    }
     internal static bool IsAllowedImageUrl(string value) =>
         value.StartsWith("/assets/", StringComparison.Ordinal) || IsHttpsUrl(value);
 
@@ -234,6 +248,7 @@ public sealed record TypeRequest(Guid Id, string Name, string Scope, bool Active
 public sealed record ProductRequest(Guid TypeId,string Name,string? Slug,string Description,string? FullDescription,string PriceMode,decimal? Price,bool Demo,bool Featured,string[]? Characteristics,string[]? Personalization,string[]? Images,string Status,int Order,Guid[]? ThemeIds = null);
 public sealed record AffiliateRequest(Guid TypeId,string Name,string Description,string Platform,string? Image,string? Url,string? Seller,bool DemoListing,bool Featured,string Status,int Order,string[]? Images = null,bool International = false,Guid? PlatformId = null) : ITranslationInput { public Dictionary<string,CatalogTranslation>? Translations { get; init; } public SupplierManagement? Management { get; init; } }
 public sealed record SettingsRequest(string WhatsappNumber);
+public sealed record SupplierManagementEditRequest(string Field,System.Text.Json.JsonElement Value);
 
 public sealed record CatalogOrderRequest(Guid[]? Ids, CatalogOrderEntry[]? Expected);
 

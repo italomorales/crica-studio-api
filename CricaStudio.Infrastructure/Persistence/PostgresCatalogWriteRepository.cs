@@ -119,6 +119,18 @@ public sealed class PostgresCatalogWriteRepository(string connectionString) : IC
         await using var c = new NpgsqlConnection(connectionString); await c.OpenAsync(cancellationToken); await using var tx = System.Transactions.Transaction.Current is null ? await c.BeginTransactionAsync(cancellationToken) : null; await using var cmd = new NpgsqlCommand(sql,c,tx);
         cmd.Parameters.AddWithValue("id",id); cmd.Parameters.AddWithValue("typeId",product.TypeId); cmd.Parameters.AddWithValue("name",product.Name); cmd.Parameters.AddWithValue("description",product.Description); cmd.Parameters.AddWithValue("platform",product.Platform); cmd.Parameters.Add("platformId",NpgsqlTypes.NpgsqlDbType.Uuid).Value=(object?)product.PlatformId??DBNull.Value; cmd.Parameters.AddWithValue("images",JsonSerializer.Serialize(product.Images)); cmd.Parameters.AddWithValue("image",(object?)product.ImageUrl??DBNull.Value); cmd.Parameters.AddWithValue("url",(object?)product.AffiliateUrl??DBNull.Value); cmd.Parameters.AddWithValue("seller",(object?)product.Seller??DBNull.Value); cmd.Parameters.Add("lastStorePrice",NpgsqlTypes.NpgsqlDbType.Numeric).Value=(object?)product.Management.LastStorePrice??DBNull.Value; cmd.Parameters.AddWithValue("linkStatus",product.Management.LinkStatus); cmd.Parameters.AddWithValue("stockStatus",product.Management.StockStatus); cmd.Parameters.AddWithValue("international",product.IsInternational); cmd.Parameters.AddWithValue("demo",product.IsDemoListing); cmd.Parameters.AddWithValue("featured",product.IsFeatured); cmd.Parameters.AddWithValue("status",product.Status); cmd.Parameters.AddWithValue("order",product.SortOrder); await cmd.ExecuteNonQueryAsync(cancellationToken); await PostgresTranslationRepository.SaveAsync(c,tx,"affiliates",id,product.Translations,cancellationToken); if(tx is not null) await tx.CommitAsync(cancellationToken); return product with { Id=id };
     }
+    public async Task<bool> UpdateSupplierManagementAsync(Guid id, SupplierManagementChange change, CancellationToken cancellationToken)
+    {
+        if (!change.IsValid()) throw new ArgumentException("Invalid supplier management change.");
+        var column=change.Field switch { "lastStorePrice"=>"last_store_price", "linkStatus"=>"link_status", _=>"stock_status" };
+        await using var connection=new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command=new NpgsqlCommand($"UPDATE cricastudio.affiliate_products SET {column}=@value WHERE id=@id",connection);
+        command.Parameters.AddWithValue("id",id);
+        if(change.Field=="lastStorePrice") command.Parameters.Add("value",NpgsqlTypes.NpgsqlDbType.Numeric).Value=(object?)change.Price??DBNull.Value;
+        else command.Parameters.AddWithValue("value",change.Status!);
+        return await command.ExecuteNonQueryAsync(cancellationToken)==1;
+    }
     public async Task<int> CountPublishedFeaturedShopProductsAsync(Guid excludingId, CancellationToken cancellationToken)
     {
         const string sql = "SELECT count(*) FROM cricastudio.shop_products WHERE status = 'published' AND is_featured AND id <> @id;";

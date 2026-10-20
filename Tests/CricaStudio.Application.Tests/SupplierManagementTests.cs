@@ -2,11 +2,29 @@ using System.Transactions;
 using CricaStudio.Domain.Catalog;
 using CricaStudio.Infrastructure.Persistence;
 using Xunit;
+using System.Text.Json;
+using CricaStudio.Api.Catalog;
 
 namespace CricaStudio.Application.Tests;
 
 public sealed class SupplierManagementTests
 {
+    [Theory]
+    [InlineData("lastStorePrice","12.50",true)]
+    [InlineData("lastStorePrice","null",true)]
+    [InlineData("lastStorePrice","-1",false)]
+    [InlineData("lastStorePrice","1.234",false)]
+    [InlineData("lastStorePrice","\"abc\"",false)]
+    [InlineData("linkStatus","\"broken\"",true)]
+    [InlineData("linkStatus","null",false)]
+    [InlineData("stockStatus","\"out_of_stock\"",true)]
+    [InlineData("stockStatus","\"inventado\"",false)]
+    [InlineData("status","\"published\"",false)]
+    public void Cell_edits_accept_only_monitoring_fields_and_typed_values(string field,string json,bool valid)
+    {
+        var value=JsonDocument.Parse(json).RootElement.Clone();
+        Assert.Equal(valid,AdminCatalogEndpoints.TrySupplierManagementChange(new(field,value),out _));
+    }
     [Theory]
     [InlineData(null,"unchecked","unchecked",true)]
     [InlineData("0","ok","in_stock",true)]
@@ -41,5 +59,18 @@ public sealed class SupplierManagementTests
         Assert.Equal("broken",saved.Management.LinkStatus);
         Assert.Equal("in_stock",saved.Management.StockStatus);
         Assert.Equal("draft",saved.Status);
+        Assert.True(await write.UpdateSupplierManagementAsync(item.Id,new("lastStorePrice",9.90m),default));
+        Assert.True(await write.UpdateSupplierManagementAsync(item.Id,new("linkStatus",Status:"ok"),default));
+        saved=(await read.GetAllAffiliateProductsAsync(default)).Single(p=>p.Id==item.Id);
+        Assert.Equal(9.90m,saved.Management.LastStorePrice);
+        Assert.Equal("ok",saved.Management.LinkStatus);
+        Assert.Equal("in_stock",saved.Management.StockStatus);
+        Assert.Equal("Management test",saved.Name);
+        Assert.Equal("draft",saved.Status);
+        Assert.True(await write.UpdateSupplierManagementAsync(item.Id,new("lastStorePrice"),default));
+        saved=(await read.GetAllAffiliateProductsAsync(default)).Single(p=>p.Id==item.Id);
+        Assert.Null(saved.Management.LastStorePrice);
+        Assert.Equal("ok",saved.Management.LinkStatus);
+        Assert.False(await write.UpdateSupplierManagementAsync(Guid.NewGuid(),new("linkStatus",Status:"ok"),default));
     }
 }

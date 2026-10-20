@@ -58,5 +58,14 @@ public sealed record SupplierManagement(decimal? LastStorePrice, string LinkStat
         && LinkStatus is "unchecked" or "ok" or "broken"
         && StockStatus is "unchecked" or "in_stock" or "out_of_stock";
 }
+public sealed record SupplierManagementChange(string Field, decimal? Price = null, string? Status = null)
+{
+    public bool IsValid() => Field switch {
+        "lastStorePrice" => new SupplierManagement(Price).IsValid(),
+        "linkStatus" => Status is "unchecked" or "ok" or "broken",
+        "stockStatus" => Status is "unchecked" or "in_stock" or "out_of_stock",
+        _ => false,
+    };
+}
 
 public sealed record CatalogSettings(string WhatsappNumber);

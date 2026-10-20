@@ -9,6 +9,7 @@ public interface ICatalogWriteRepository
     Task<ShopProduct> SaveShopProductAsync(ShopProduct product, CancellationToken cancellationToken);
     Task<int> CountPublishedFeaturedShopProductsAsync(Guid excludingId, CancellationToken cancellationToken);
     Task<AffiliateProduct> SaveAffiliateProductAsync(AffiliateProduct product, CancellationToken cancellationToken);
+    Task<bool> UpdateSupplierManagementAsync(Guid id, SupplierManagementChange change, CancellationToken cancellationToken);
     Task<int> CountPublishedFeaturedAffiliateProductsAsync(Guid excludingId, CancellationToken cancellationToken);
     Task SaveSettingsAsync(CatalogSettings settings, CancellationToken cancellationToken);
     Task DeleteTypeAsync(Guid id, CancellationToken cancellationToken);
