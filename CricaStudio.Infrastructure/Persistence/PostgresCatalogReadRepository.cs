@@ -225,7 +225,7 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
     {
         var sql = $"""
             SELECT id, type_id, name, description, platform, image_url, affiliate_url, seller,
-                   is_demo_listing, is_featured, status, sort_order, images::text, is_international, platform_id
+                   is_demo_listing, is_featured, status, sort_order, images::text, is_international, platform_id, last_store_price, link_status, stock_status
             FROM cricastudio.affiliate_products
             {(onlyPublished ? "WHERE status = 'published'" : string.Empty)}
             ORDER BY sort_order, created_at;
@@ -241,7 +241,7 @@ public sealed class PostgresCatalogReadRepository(string connectionString) : ICa
                 reader.GetGuid(0), reader.GetGuid(1), reader.GetString(2), reader.GetString(3),
                 reader.GetString(4), reader.IsDBNull(5) ? null : reader.GetString(5),
                 reader.IsDBNull(6) ? null : reader.GetString(6), reader.IsDBNull(7) ? null : reader.GetString(7),
-                reader.GetBoolean(8), reader.GetBoolean(9), reader.GetString(10), reader.GetInt32(11)) { Images = DeserializeStrings(reader.GetString(12)), IsInternational = reader.GetBoolean(13), PlatformId = reader.IsDBNull(14) ? null : reader.GetGuid(14) });
+                reader.GetBoolean(8), reader.GetBoolean(9), reader.GetString(10), reader.GetInt32(11)) { Images = DeserializeStrings(reader.GetString(12)), IsInternational = reader.GetBoolean(13), PlatformId = reader.IsDBNull(14) ? null : reader.GetGuid(14), Management = new(reader.IsDBNull(15) ? null : reader.GetDecimal(15),reader.GetString(16),reader.GetString(17)) });
         return products;
     }
 

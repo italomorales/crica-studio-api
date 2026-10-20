@@ -45,10 +45,18 @@ public sealed record AffiliateProduct(
     string Status,
     int SortOrder) : ITranslationInput
 {
+    public SupplierManagement Management { get; init; } = new(null);
     public Dictionary<string,CatalogTranslation>? Translations { get; init; }
     public IReadOnlyList<string> Images { get; init; } = [];
     public bool IsInternational { get; init; }
     public Guid? PlatformId { get; init; }
+}
+
+public sealed record SupplierManagement(decimal? LastStorePrice, string LinkStatus = "unchecked", string StockStatus = "unchecked")
+{
+    public bool IsValid() => (LastStorePrice is null || (LastStorePrice >= 0 && LastStorePrice <= 9999999999.99m && decimal.Round(LastStorePrice.Value,2) == LastStorePrice))
+        && LinkStatus is "unchecked" or "ok" or "broken"
+        && StockStatus is "unchecked" or "in_stock" or "out_of_stock";
 }
 
 public sealed record CatalogSettings(string WhatsappNumber);

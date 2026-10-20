@@ -72,6 +72,9 @@ public static class AdminCatalogEndpoints
                 images = product.Images,
                 url = product.AffiliateUrl,
                 seller = product.Seller,
+                lastStorePrice = product.Management.LastStorePrice,
+                linkStatus = product.Management.LinkStatus,
+                stockStatus = product.Management.StockStatus,
                 demoListing = product.IsDemoListing,
                 featured = product.IsFeatured,
                 status = product.Status,
@@ -193,6 +196,8 @@ public static class AdminCatalogEndpoints
 
     private static async Task<IResult> SaveAffiliate(AffiliateRequest r, Guid id, ICatalogWriteRepository repo, IPlatformRepository platforms, CatalogReadService catalog, CancellationToken ct)
     {
+        if (r.Management is not null && !r.Management.IsValid())
+            return Results.ValidationProblem(new Dictionary<string,string[]> { ["management"] = ["Informe um preço não negativo com até duas casas decimais e situações válidas para link e estoque."] });
         var images = r.Images ?? (string.IsNullOrWhiteSpace(r.Image) ? [] : new[] { r.Image });
         if (r.TypeId == Guid.Empty || string.IsNullOrWhiteSpace(r.Name) || string.IsNullOrWhiteSpace(r.Description) || r.Order < 0 ||
             !new[] { "draft", "published", "inactive" }.Contains(r.Status) || string.IsNullOrWhiteSpace(r.Platform) ||
@@ -213,7 +218,8 @@ public static class AdminCatalogEndpoints
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["platform"] = ["Selecione uma plataforma cadastrada."] });
         if (!selectedPlatform.Active && !(await catalog.GetAllAffiliateProductsAsync(ct)).Any(p => p.Id == id && p.PlatformId == selectedPlatform.Id))
             return Results.ValidationProblem(new Dictionary<string, string[]> { ["platform"] = ["Selecione uma plataforma ativa."] });
-        var affiliate = await repo.SaveAffiliateProductAsync(new AffiliateProduct(id, r.TypeId, r.Name.Trim(), r.Description.Trim(), selectedPlatform.Name, images.FirstOrDefault()?.Trim(), r.Url?.Trim(), r.Seller?.Trim(), r.DemoListing, r.Featured, r.Status, r.Order) { Images = images.Select(image => image.Trim()).ToArray(), IsInternational = r.International, PlatformId = selectedPlatform.Id, Translations = r.Translations }, ct);
+        var management = r.Management ?? (await catalog.GetAllAffiliateProductsAsync(ct)).FirstOrDefault(p => p.Id == id)?.Management ?? new(null);
+        var affiliate = await repo.SaveAffiliateProductAsync(new AffiliateProduct(id, r.TypeId, r.Name.Trim(), r.Description.Trim(), selectedPlatform.Name, images.FirstOrDefault()?.Trim(), r.Url?.Trim(), r.Seller?.Trim(), r.DemoListing, r.Featured, r.Status, r.Order) { Management = management, Images = images.Select(image => image.Trim()).ToArray(), IsInternational = r.International, PlatformId = selectedPlatform.Id, Translations = r.Translations }, ct);
         return Results.Ok(new { id = affiliate.Id });
     }
 
@@ -226,7 +232,7 @@ public static class AdminCatalogEndpoints
 
 public sealed record TypeRequest(Guid Id, string Name, string Scope, bool Active) : ITranslationInput { public Dictionary<string,CatalogTranslation>? Translations { get; init; } }
 public sealed record ProductRequest(Guid TypeId,string Name,string? Slug,string Description,string? FullDescription,string PriceMode,decimal? Price,bool Demo,bool Featured,string[]? Characteristics,string[]? Personalization,string[]? Images,string Status,int Order,Guid[]? ThemeIds = null);
-public sealed record AffiliateRequest(Guid TypeId,string Name,string Description,string Platform,string? Image,string? Url,string? Seller,bool DemoListing,bool Featured,string Status,int Order,string[]? Images = null,bool International = false,Guid? PlatformId = null) : ITranslationInput { public Dictionary<string,CatalogTranslation>? Translations { get; init; } }
+public sealed record AffiliateRequest(Guid TypeId,string Name,string Description,string Platform,string? Image,string? Url,string? Seller,bool DemoListing,bool Featured,string Status,int Order,string[]? Images = null,bool International = false,Guid? PlatformId = null) : ITranslationInput { public Dictionary<string,CatalogTranslation>? Translations { get; init; } public SupplierManagement? Management { get; init; } }
 public sealed record SettingsRequest(string WhatsappNumber);
 
 public sealed record CatalogOrderRequest(Guid[]? Ids, CatalogOrderEntry[]? Expected);
