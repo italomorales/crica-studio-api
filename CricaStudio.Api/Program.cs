@@ -12,6 +12,7 @@ using Microsoft.IdentityModel.Tokens;
 using CricaStudio.Api.Blog;
 using CricaStudio.Domain.Blog;
 using Microsoft.Extensions.FileProviders;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -54,6 +55,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 builder.Services.AddAuthorization();
+builder.Services.AddRateLimiter(options => options.AddPolicy("statistics", context =>
+    RateLimitPartition.GetFixedWindowLimiter(context.Request.Headers["X-Real-IP"].FirstOrDefault() ?? context.Connection.RemoteIpAddress?.ToString() ?? "unknown", _ =>
+        new FixedWindowRateLimiterOptions { PermitLimit = 1200, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 })));
 builder.AddBlogSocial();
 builder.Services.AddScoped<PostgresBlogActivityRepository>(_=>new(databaseConnectionString??throw new InvalidOperationException("Banco não configurado.")));
 
@@ -103,6 +107,7 @@ app.Use(async(context,next)=>{
 });
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 if (localBlogMedia)
 {
     Directory.CreateDirectory(catalogMediaOptions.LocalDirectory);
@@ -133,6 +138,7 @@ app.MapGet("/api/ping", () => Results.Ok(new { message = "API online", timestamp
 app.MapAuthEndpoints();
 app.MapCatalogEndpoints();
 app.MapAdminCatalogEndpoints();
+app.MapStatisticsEndpoints(databaseConnectionString);
 app.MapPlatformEndpoints();
 app.MapTranslationEndpoints();
 app.MapBlogEndpoints();
